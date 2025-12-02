@@ -7,10 +7,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import json
+import logging
+import uuid
+import mimetypes
+import re
 from typing import List
 
 from config import settings
-from database import get_db, Job, JobStatus, JobType
+from database import get_db, Job, JobStatus, JobType, SessionLocal
 from schemas import (
     TranscribeRequest,
     EnhanceRequest,
@@ -20,12 +24,19 @@ from schemas import (
 )
 from whisper_service import whisper_service
 
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper()),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Whisper WebUI API", version="1.0.0")
 
-# CORS middleware
+# CORS middleware - only allow specific origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,6 +44,57 @@ app.add_middleware(
 
 # Mount static files for uploaded audio
 app.mount("/api/uploads", StaticFiles(directory=str(settings.upload_dir)), name="uploads")
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal attacks
+
+    Removes path separators and potentially dangerous characters
+    """
+    # Get just the filename without any path components
+    filename = Path(filename).name
+
+    # Remove or replace dangerous characters
+    # Keep only alphanumeric, dots, hyphens, and underscores
+    safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+
+    # Ensure filename is not empty and doesn't start with a dot
+    if not safe_filename or safe_filename.startswith('.'):
+        safe_filename = 'file_' + safe_filename
+
+    return safe_filename
+
+
+def validate_mime_type(file_content: bytes, filename: str) -> bool:
+    """
+    Validate file MIME type based on content (magic bytes)
+
+    Returns True if the file is a valid audio file
+    """
+    # Audio file magic bytes (first few bytes)
+    audio_signatures = {
+        b'ID3': 'audio/mpeg',  # MP3 with ID3
+        b'\xff\xfb': 'audio/mpeg',  # MP3
+        b'\xff\xf3': 'audio/mpeg',  # MP3
+        b'\xff\xf2': 'audio/mpeg',  # MP3
+        b'RIFF': 'audio/wav',  # WAV
+        b'fLaC': 'audio/flac',  # FLAC
+        b'OggS': 'audio/ogg',  # OGG
+        b'\x00\x00\x00\x20ftypM4A': 'audio/m4a',  # M4A
+        b'\x00\x00\x00\x1cftypM4A': 'audio/m4a',  # M4A
+    }
+
+    # Check magic bytes
+    for signature in audio_signatures:
+        if file_content.startswith(signature):
+            return True
+
+    # Also check for ftyp (MP4/M4A container)
+    if b'ftyp' in file_content[:32]:
+        return True
+
+    return False
 
 
 def get_audio_duration_fast(file_path: str) -> float:
@@ -57,7 +119,7 @@ def get_audio_duration_fast(file_path: str) -> float:
             duration = float(data['format']['duration'])
             return duration
     except (subprocess.TimeoutExpired, FileNotFoundError, KeyError, ValueError, json.JSONDecodeError) as e:
-        print(f"[WARNING] Failed to get duration with ffprobe: {e}")
+        logger.warning(f"Failed to get duration with ffprobe: {e}")
 
     return None
 
@@ -79,37 +141,66 @@ async def upload_audio(file: UploadFile = File(...)):
 
     Supported formats: MP3, WAV, FLAC, AAC, OGG, M4A, WMA
     """
+    logger.info(f"Uploading file: {file.filename}")
+
     # Validate file extension
     allowed_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma'}
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:
+        logger.warning(f"Invalid file extension: {file_ext}")
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file format. Allowed: {', '.join(allowed_extensions)}"
+            detail=f"Unsupported file format. Allowed formats: {', '.join(allowed_extensions)}"
+        )
+
+    # Sanitize filename to prevent path traversal
+    safe_filename = sanitize_filename(file.filename)
+
+    # Generate unique filename to prevent collisions
+    unique_id = str(uuid.uuid4())[:8]
+    name_without_ext = Path(safe_filename).stem
+    unique_filename = f"{name_without_ext}_{unique_id}{file_ext}"
+
+    file_path = settings.upload_dir / unique_filename
+
+    # Read file content for validation and saving
+    file_content = await file.read()
+
+    # Validate MIME type using magic bytes
+    if not validate_mime_type(file_content[:32], file.filename):
+        logger.warning(f"Invalid MIME type for file: {file.filename}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. The file does not appear to be a valid audio file."
+        )
+
+    # Check file size before saving
+    file_size = len(file_content)
+    if file_size > settings.max_file_size_bytes:
+        logger.warning(f"File too large: {file_size} bytes")
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum allowed size is {settings.max_file_size}."
         )
 
     # Save uploaded file
-    file_path = settings.upload_dir / file.filename
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Get file size
-    file_size = file_path.stat().st_size
-
-    # Check file size
-    if file_size > settings.max_file_size_bytes:
-        file_path.unlink()  # Delete the file
+    try:
+        with open(file_path, "wb") as buffer:
+            buffer.write(file_content)
+        logger.info(f"File saved: {unique_filename}")
+    except Exception as e:
+        logger.error(f"Failed to save file: {e}")
         raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {settings.max_file_size}"
+            status_code=500,
+            detail="Failed to save uploaded file. Please try again."
         )
 
     # Get audio duration using fast ffprobe method
     duration = get_audio_duration_fast(str(file_path))
 
     return UploadResponse(
-        filename=file.filename,
+        filename=unique_filename,
         size=file_size,
         duration=duration
     )
@@ -317,23 +408,53 @@ async def delete_job(job_id: int, db: Session = Depends(get_db)):
 # Background task functions
 async def process_transcribe_job(job_id: int):
     """Background task to process transcription job"""
-    db = next(get_db())
+    db = SessionLocal()
     try:
+        logger.info(f"Starting transcription job {job_id}")
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             await whisper_service.transcribe_audio(job, db)
+            logger.info(f"Completed transcription job {job_id}")
+        else:
+            logger.error(f"Job {job_id} not found")
+    except Exception as e:
+        logger.error(f"Error processing transcription job {job_id}: {e}")
+        # Update job status to failed
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = str(e)
+                db.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update job status: {db_error}")
     finally:
         db.close()
 
 
 async def process_enhance_job(job_id: int, source_job_id: int):
     """Background task to process enhancement job"""
-    db = next(get_db())
+    db = SessionLocal()
     try:
+        logger.info(f"Starting enhancement job {job_id}")
         job = db.query(Job).filter(Job.id == job_id).first()
         source_job = db.query(Job).filter(Job.id == source_job_id).first()
         if job and source_job:
             await whisper_service.enhance_job(job, source_job, db)
+            logger.info(f"Completed enhancement job {job_id}")
+        else:
+            logger.error(f"Job {job_id} or source job {source_job_id} not found")
+    except Exception as e:
+        logger.error(f"Error processing enhancement job {job_id}: {e}")
+        # Update job status to failed
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = str(e)
+                db.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update job status: {db_error}")
     finally:
         db.close()
 

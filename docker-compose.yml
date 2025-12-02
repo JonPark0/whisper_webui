@@ -17,6 +17,7 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - RELOAD_MODE=${RELOAD_MODE:-true}
     restart: unless-stopped
     deploy:
       resources:

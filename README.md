@@ -59,9 +59,43 @@ All configuration is done via the `.env` file. See [.env.example](.env.example) 
 - `GEMINI_API_KEY`: Your Google Gemini API key (get it from [Google AI Studio](https://aistudio.google.com/))
 
 ### Optional Configuration
+
+**AI Models:**
 - `WHISPER_MODEL`: Whisper model to use (default: `openai/whisper-large-v3-turbo`)
 - `ENABLE_FLASH_ATTENTION`: Enable Flash Attention 2 for faster GPU processing (default: `false`)
+
+**Server Settings:**
+- `BACKEND_PORT`: Backend server port (default: `8000`)
+- `FRONTEND_PORT`: Frontend server port (default: `5173`)
+- `RELOAD_MODE`: Enable auto-reload for development (default: `true`)
+
+**Security:**
+- `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (default: `http://localhost:5173`)
+  - For development: `http://localhost:5173,http://localhost:3000`
+  - For production: `https://yourdomain.com`
+
+**File Handling:**
 - `MAX_FILE_SIZE`: Maximum upload file size (default: `500MB`)
+- `UPLOAD_DIR`: Directory for uploaded files (default: `/app/uploads`)
+- `OUTPUT_DIR`: Directory for output files (default: `/app/outputs`)
+
+**Logging:**
+- `LOG_LEVEL`: Logging level - DEBUG, INFO, WARNING, ERROR (default: `INFO`)
+- `LOG_FORMAT`: Log format - json or text (default: `json`)
+
+## Security Features
+
+This application includes several security enhancements:
+
+- **CORS Protection**: Configurable allowed origins to prevent unauthorized access
+- **File Validation**:
+  - Extension validation for audio files
+  - MIME type validation using magic bytes
+  - File size limits
+- **Path Traversal Prevention**: Filename sanitization to prevent directory traversal attacks
+- **Unique File Naming**: UUID-based filenames to prevent collisions and overwrites
+- **Thread-Safe Operations**: Singleton services with proper locking mechanisms
+- **Structured Logging**: Comprehensive logging for monitoring and debugging
 
 ## Development
 
