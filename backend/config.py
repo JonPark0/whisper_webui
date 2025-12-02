@@ -1,19 +1,24 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
+from typing import List
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
 
     # API Configuration
-    gemini_api_key: str
+    gemini_api_key: str = ""
 
     # Whisper Configuration
     whisper_model: str = "openai/whisper-large-v3-turbo"
+    whisper_transcribe_path: str = "/whisper_transcribe"
 
     # Server Configuration
     backend_port: int = 8000
     backend_host: str = "0.0.0.0"
+
+    # CORS Configuration
+    allowed_origins: str = "http://localhost:5173"
 
     # File Configuration
     max_file_size: str = "500MB"
@@ -26,6 +31,10 @@ class Settings(BaseSettings):
 
     # Database Configuration
     db_path: Path = Path("/app/data/whisper.db")
+
+    # Logging Configuration
+    log_level: str = "INFO"
+    log_format: str = "json"
 
     class Config:
         env_file = ".env"
@@ -43,6 +52,13 @@ class Settings(BaseSettings):
             return int(size[:-2]) * 1024
         else:
             return int(size)
+
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        """Convert comma-separated allowed_origins string to list"""
+        if not self.allowed_origins:
+            return ["http://localhost:5173"]
+        return [origin.strip() for origin in self.allowed_origins.split(",")]
 
 
 settings = Settings()

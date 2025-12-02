@@ -3,14 +3,19 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+import logging
+import threading
+
+from config import settings
 
 # Add whisper_transcribe to Python path
-sys.path.insert(0, '/whisper_transcribe')
+sys.path.insert(0, settings.whisper_transcribe_path)
 
 from core.transcriber import WhisperTranscriber
 from core.enhancer import TranscriptEnhancer
-from config import settings
 from database import Job, JobStatus, get_db
+
+logger = logging.getLogger(__name__)
 
 
 class WhisperService:
@@ -19,26 +24,41 @@ class WhisperService:
     def __init__(self):
         self.transcriber = None
         self.enhancer = None
+        self._transcriber_lock = threading.Lock()
+        self._enhancer_lock = threading.Lock()
 
     def _get_transcriber(self) -> WhisperTranscriber:
-        """Lazy load transcriber"""
+        """Lazy load transcriber (thread-safe)"""
         if self.transcriber is None:
-            # WhisperTranscriber uses hardcoded openai/whisper-large-v3-turbo model
-            # Note: settings.whisper_model is ignored as the model is fixed in the transcriber
-            self.transcriber = WhisperTranscriber(
-                verbose=True,
-                use_flash_attn=settings.enable_flash_attention
-            )
-            # Load model on initialization
-            self.transcriber.load_model()
+            with self._transcriber_lock:
+                # Double-check locking pattern
+                if self.transcriber is None:
+                    logger.info("Initializing Whisper transcriber")
+                    # WhisperTranscriber uses hardcoded openai/whisper-large-v3-turbo model
+                    # Note: settings.whisper_model is ignored as the model is fixed in the transcriber
+                    self.transcriber = WhisperTranscriber(
+                        verbose=True,
+                        use_flash_attn=settings.enable_flash_attention
+                    )
+                    # Load model on initialization
+                    self.transcriber.load_model()
+                    logger.info("Whisper transcriber loaded successfully")
         return self.transcriber
 
     def _get_enhancer(self) -> TranscriptEnhancer:
-        """Lazy load enhancer"""
+        """Lazy load enhancer (thread-safe)"""
         if self.enhancer is None:
-            self.enhancer = TranscriptEnhancer(verbose=True)
-            # Setup Gemini API with the API key
-            self.enhancer.setup_gemini(settings.gemini_api_key)
+            with self._enhancer_lock:
+                # Double-check locking pattern
+                if self.enhancer is None:
+                    logger.info("Initializing transcript enhancer")
+                    self.enhancer = TranscriptEnhancer(verbose=True)
+                    # Setup Gemini API with the API key
+                    if settings.gemini_api_key:
+                        self.enhancer.setup_gemini(settings.gemini_api_key)
+                        logger.info("Gemini API configured successfully")
+                    else:
+                        logger.warning("No Gemini API key provided")
         return self.enhancer
 
     async def transcribe_audio(self, job: Job, db_session) -> str:
@@ -53,6 +73,8 @@ class WhisperService:
             Path to output markdown file
         """
         try:
+            logger.info(f"Starting transcription for job {job.id}, file: {job.input_file}")
+
             # Update job status
             job.status = JobStatus.PROCESSING
             job.started_at = datetime.utcnow()
@@ -63,6 +85,9 @@ class WhisperService:
 
             # Prepare input file path
             input_path = Path(job.input_file)
+
+            if not input_path.exists():
+                raise FileNotFoundError(f"Input file not found: {job.input_file}")
 
             # Progress callback for transcription
             def progress_update(update_data: dict):

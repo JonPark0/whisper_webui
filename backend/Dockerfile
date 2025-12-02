@@ -36,5 +36,15 @@ RUN mkdir -p /app/uploads /app/outputs /app/data
 # Expose port
 EXPOSE 8000
 
+# Environment variable to control reload mode
+ENV RELOAD_MODE=false
+
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Use conditional reload based on environment
+# For production: --workers 4 --worker-class uvicorn.workers.UvicornWorker
+# For development: --reload
+CMD if [ "$RELOAD_MODE" = "true" ]; then \
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload; \
+    else \
+        uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1; \
+    fi
