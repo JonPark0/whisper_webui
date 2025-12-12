@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend-lint:
+    name: Backend Linting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install flake8 black isort mypy
+          pip install -r requirements.txt || true
+
+      - name: Run Black (code formatter check)
+        run: |
+          cd backend
+          black --check --diff *.py || echo "Black formatting issues found (non-blocking)"
+
+      - name: Run isort (import sorting check)
+        run: |
+          cd backend
+          isort --check-only --diff *.py || echo "Import sorting issues found (non-blocking)"
+
+      - name: Run Flake8 (linting)
+        run: |
+          cd backend
+          flake8 --max-line-length=120 --extend-ignore=E203,W503 *.py || echo "Flake8 issues found (non-blocking)"
+
+  frontend-lint-build:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run ESLint
+        run: |
+          cd frontend
+          npm run lint || echo "ESLint issues found (non-blocking)"
+        continue-on-error: true
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env file for build
+        run: |
+          cp .env.example .env
+          echo "GEMINI_API_KEY=test-key-for-build" >> .env
+
+      - name: Build backend image
+        run: |
+          docker build -t whisper-backend:test ./backend
+
+      - name: Build frontend image
+        run: |
+          docker build -t whisper-frontend:test ./frontend
+
+      - name: Test docker-compose config
+        run: |
+          docker-compose config
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
