@@ -101,7 +101,7 @@ docker-config-test:
     - Checkout code
     - Set up Docker Buildx
     - Create .env file
-    - Test docker-compose config
+    - Test docker compose config
     - Build frontend image (lightweight test)
 ```
 
@@ -112,8 +112,12 @@ docker-config-test:
 
 **Local equivalent:**
 ```bash
-docker-compose config
+# Docker Compose v2 (recommended)
+docker compose config
 docker build -t whisper-frontend:test ./frontend
+
+# Or Docker Compose v1 (if installed)
+docker-compose config
 ```
 
 **Important:** Backend Docker build is **NOT** included in CI because:

@@ -88,9 +88,9 @@ jobs:
           cp .env.example .env
           echo "GEMINI_API_KEY=test-key-for-build" >> .env
 
-      - name: Test docker-compose config
+      - name: Test docker compose config
         run: |
-          docker-compose config
+          docker compose config
 
       - name: Build frontend image (lightweight test)
         run: |
