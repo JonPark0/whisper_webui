@@ -19,14 +19,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install linting tools
+        run: |
+          pip install --upgrade pip
+          pip install flake8 black isort
+
+      - name: Install minimal dependencies for type checking
         run: |
           cd backend
-          pip install --upgrade pip
-          pip install flake8 black isort mypy
-          pip install -r requirements.txt || true
+          # Only install lightweight dependencies needed for imports (skip torch, transformers, etc.)
+          pip install fastapi pydantic pydantic-settings sqlalchemy python-dotenv celery redis google-generativeai || true
+        continue-on-error: true
 
       - name: Run Black (code formatter check)
         run: |
