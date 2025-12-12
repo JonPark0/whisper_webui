@@ -43,8 +43,8 @@ jobs:
           cd backend
           flake8 --max-line-length=120 --extend-ignore=E203,W503 *.py || echo "Flake8 issues found (non-blocking)"
 
-  frontend-lint-build:
-    name: Frontend Lint & Build
+  frontend-build:
+    name: Frontend Build
     runs-on: ubuntu-latest
 
     steps:
@@ -63,19 +63,13 @@ jobs:
           cd frontend
           npm ci
 
-      - name: Run ESLint
-        run: |
-          cd frontend
-          npm run lint || echo "ESLint issues found (non-blocking)"
-        continue-on-error: true
-
       - name: Build frontend
         run: |
           cd frontend
           npm run build
 
-  docker-build:
-    name: Docker Build Test
+  docker-config-test:
+    name: Docker Config Test
     runs-on: ubuntu-latest
 
     steps:
@@ -85,22 +79,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create .env file for build
+      - name: Create .env file for config test
         run: |
           cp .env.example .env
           echo "GEMINI_API_KEY=test-key-for-build" >> .env
 
-      - name: Build backend image
-        run: |
-          docker build -t whisper-backend:test ./backend
-
-      - name: Build frontend image
-        run: |
-          docker build -t whisper-frontend:test ./frontend
-
       - name: Test docker-compose config
         run: |
           docker-compose config
+
+      - name: Build frontend image (lightweight test)
+        run: |
+          docker build -t whisper-frontend:test ./frontend
+        timeout-minutes: 5
+
+      # Backend Docker build is skipped in CI due to large NVIDIA base image (~20GB)
+      # Backend image should be built locally or in dedicated build pipeline
+      # To test backend build locally: docker build -t whisper-backend:test ./backend
 
   security-scan:
     name: Security Scanning

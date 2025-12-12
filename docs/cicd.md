@@ -63,56 +63,69 @@ isort --check-only *.py
 flake8 --max-line-length=120 *.py
 ```
 
-#### 2. Frontend Lint & Build
+#### 2. Frontend Build
 
 ```yaml
-frontend-lint-build:
+frontend-build:
   runs-on: ubuntu-latest
   steps:
     - Checkout code
     - Set up Node.js 20
     - Install dependencies (npm ci)
-    - Run ESLint
     - Build frontend
 ```
 
 **What it checks:**
-- JavaScript/JSX code quality
 - Build success
 - No build errors or warnings
+- Dependencies install correctly
 
 **Local equivalent:**
 ```bash
 cd frontend
 npm ci
-npm run lint
 npm run build
 ```
 
-#### 3. Docker Build Test
+**Note:** Linting is not included as the project doesn't currently have ESLint configured. To add linting:
+1. Install ESLint: `npm install --save-dev eslint`
+2. Add lint script to `package.json`: `"lint": "eslint src"`
+3. Create `.eslintrc.js` configuration
+
+#### 3. Docker Config Test
 
 ```yaml
-docker-build:
+docker-config-test:
   runs-on: ubuntu-latest
   steps:
     - Checkout code
     - Set up Docker Buildx
     - Create .env file
-    - Build backend image
-    - Build frontend image
     - Test docker-compose config
+    - Build frontend image (lightweight test)
 ```
 
 **What it checks:**
-- Docker images build successfully
 - Docker Compose configuration is valid
-- No build errors
+- Frontend Docker image builds successfully
+- No configuration errors
 
 **Local equivalent:**
 ```bash
-docker build -t whisper-backend:test ./backend
-docker build -t whisper-frontend:test ./frontend
 docker-compose config
+docker build -t whisper-frontend:test ./frontend
+```
+
+**Important:** Backend Docker build is **NOT** included in CI because:
+- Uses large NVIDIA PyTorch base image (~20GB)
+- Downloads Whisper models during build
+- Requires GPU support
+- Takes 20+ minutes to build
+- Not suitable for GitHub Actions free tier
+
+To test backend Docker build locally:
+```bash
+docker build -t whisper-backend:test ./backend
 ```
 
 #### 4. Security Scanning
