@@ -18,6 +18,8 @@ google-generativeai>=0.8.0,<1.0.0
 # Database and queue management
 sqlalchemy>=2.0.25,<2.1.0
 aiosqlite>=0.19.0,<0.20.0
+celery>=5.3.0,<6.0.0
+redis>=5.0.0,<6.0.0
 
 # Utilities
 python-dotenv>=1.0.0,<2.0.0

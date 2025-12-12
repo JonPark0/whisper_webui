@@ -30,8 +30,23 @@ RUN python -c "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 # Copy application code
 COPY . .
 
-# Create necessary directories
+# Create necessary directories with proper permissions
 RUN mkdir -p /app/uploads /app/outputs /app/data
+
+# The base image already has a user with UID 1000
+# Check if user exists and get username, then change ownership
+RUN existing_user=$(getent passwd 1000 | cut -d: -f1) && \
+    if [ -n "$existing_user" ]; then \
+        echo "Using existing user: $existing_user (UID 1000)"; \
+        chown -R 1000:1000 /app; \
+    else \
+        echo "Creating new user: appuser (UID 1000)"; \
+        groupadd -r appuser && useradd -r -g appuser -u 1000 appuser; \
+        chown -R appuser:appuser /app; \
+    fi
+
+# Switch to non-root user (UID 1000)
+USER 1000
 
 # Expose port
 EXPOSE 8000

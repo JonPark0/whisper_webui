@@ -60,6 +60,7 @@ export const apiService = {
 
     if (filters.job_type) params.append('job_type', filters.job_type);
     if (filters.status) params.append('status', filters.status);
+    if (filters.archived !== undefined) params.append('archived', filters.archived);
     if (filters.limit) params.append('limit', filters.limit);
     if (filters.offset) params.append('offset', filters.offset);
 
@@ -90,6 +91,18 @@ export const apiService = {
   // Delete job
   async deleteJob(jobId) {
     const response = await api.delete(`/api/jobs/${jobId}`);
+    return response.data;
+  },
+
+  // Archive job
+  async archiveJob(jobId) {
+    const response = await api.put(`/api/jobs/${jobId}/archive`);
+    return response.data;
+  },
+
+  // Unarchive job
+  async unarchiveJob(jobId) {
+    const response = await api.put(`/api/jobs/${jobId}/unarchive`);
     return response.data;
   },
 };

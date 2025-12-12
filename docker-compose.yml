@@ -1,11 +1,24 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: whisper_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - whisper_network
+    command: redis-server --appendonly yes
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: whisper_backend
+    user: "1000:1000"  # Run as non-root user
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "0.0.0.0:${BACKEND_PORT:-8000}:8000"  # Listen on all interfaces
     volumes:
       - ./backend:/app
       - ../whisper_transcribe:/whisper_transcribe:ro
@@ -18,6 +31,40 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - RELOAD_MODE=${RELOAD_MODE:-true}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - whisper_network
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: whisper_celery_worker
+    user: "1000:1000"  # Run as non-root user
+    ipc: host  # Use host IPC for shared memory (required for PyTorch)
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    command: celery -A celery_app worker --loglevel=info --pool=solo --concurrency=1
+    volumes:
+      - ./backend:/app
+      - ../whisper_transcribe:/whisper_transcribe:ro
+      - uploads:/app/uploads
+      - outputs:/app/outputs
+      - models:/app/models
+      - data:/app/data
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379/0
+      - C_FORCE_ROOT=false  # Disable Celery root warning
+    depends_on:
+      - redis
+      - backend
     restart: unless-stopped
     deploy:
       resources:
@@ -35,7 +82,7 @@ services:
       dockerfile: Dockerfile
     container_name: whisper_frontend
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "0.0.0.0:${FRONTEND_PORT:-5173}:5173"  # Listen on all interfaces
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -53,6 +100,7 @@ volumes:
   outputs:
   models:
   data:
+  redis_data:
 
 networks:
   whisper_network:

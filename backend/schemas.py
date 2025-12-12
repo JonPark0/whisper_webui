@@ -32,6 +32,7 @@ class JobResponse(BaseModel):
     output_file: Optional[str]
     progress: float
     error_message: Optional[str]
+    archived: int
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

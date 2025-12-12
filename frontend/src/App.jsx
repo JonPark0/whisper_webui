@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { TranscribePage } from './pages/TranscribePage';
 import { EnhancePage } from './pages/EnhancePage';
+import ArchivePage from './pages/ArchivePage';
 
 const Navigation = () => {
   const location = useLocation();
@@ -53,6 +54,16 @@ const Navigation = () => {
             >
               Enhance
             </Link>
+            <Link
+              to="/archive"
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                isActive('/archive')
+                  ? 'bg-purple-100 text-purple-700'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              Archive
+            </Link>
           </div>
         </div>
       </div>
@@ -62,7 +73,12 @@ const Navigation = () => {
 
 function App() {
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <div className="min-h-screen bg-gray-50">
         <Navigation />
 
@@ -70,6 +86,7 @@ function App() {
           <Routes>
             <Route path="/" element={<TranscribePage />} />
             <Route path="/enhance" element={<EnhancePage />} />
+            <Route path="/archive" element={<ArchivePage />} />
           </Routes>
         </main>
 

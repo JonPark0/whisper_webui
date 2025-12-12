@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Database Configuration
     db_path: Path = Path("/app/data/whisper.db")
 
+    # Redis/Celery Configuration
+    redis_url: str = "redis://redis:6379/0"
+
     # Logging Configuration
     log_level: str = "INFO"
     log_format: str = "json"

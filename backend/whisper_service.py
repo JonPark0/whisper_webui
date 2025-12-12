@@ -306,6 +306,203 @@ class WhisperService:
         _, duration = transcriber.load_audio_segment(file_path)
         return duration
 
+    def transcribe_audio_sync(self, job: Job, db_session) -> str:
+        """
+        Synchronous version of transcribe_audio for Celery workers
+
+        This method is identical to transcribe_audio but without async/await
+        """
+        try:
+            logger.info(f"Starting transcription for job {job.id}, file: {job.input_file}")
+
+            # Update job status
+            job.status = JobStatus.PROCESSING
+            job.started_at = datetime.utcnow()
+            job.progress = 0.0
+            db_session.commit()
+
+            transcriber = self._get_transcriber()
+
+            # Prepare input file path
+            input_path = Path(job.input_file)
+
+            if not input_path.exists():
+                raise FileNotFoundError(f"Input file not found: {job.input_file}")
+
+            # Progress callback for transcription
+            def progress_update(update_data: dict):
+                """Update job progress based on transcription stage"""
+                stage = update_data.get('stage', '')
+                progress = update_data.get('progress', 0)
+
+                # Map transcription progress (0.1-1.0) to job progress (10%-80%)
+                job_progress = 10.0 + (progress * 70.0)
+                job.progress = job_progress
+                db_session.commit()
+
+            # Transcribe using the correct API
+            transcribe_result = transcriber.transcribe_audio(
+                audio_path=str(input_path),
+                enable_timestamps=bool(job.enable_timestamp),
+                start_time=job.start_time,
+                end_time=job.end_time,
+                progress_callback=progress_update
+            )
+
+            # Check if transcription was successful
+            if not transcribe_result.get('success', False):
+                error_msg = transcribe_result.get('error', 'Unknown transcription error')
+                raise Exception(f"Transcription failed: {error_msg}")
+
+            # Extract the text result
+            result = transcribe_result['text']
+
+            job.progress = 80.0
+            db_session.commit()
+
+            # Save to markdown file
+            output_filename = f"{input_path.stem}_{job.id}.md"
+            output_path = settings.output_dir / output_filename
+
+            self._save_markdown(
+                output_path=output_path,
+                input_filename=input_path.name,
+                content=result,
+                timestamp_enabled=bool(job.enable_timestamp)
+            )
+
+            job.output_file = str(output_path)
+            job.progress = 90.0
+            db_session.commit()
+
+            # Auto-enhance if requested
+            if job.auto_enhance:
+                enhanced_result = self.enhance_transcript_sync(
+                    transcript=result,
+                    prompt=job.enhancement_prompt,
+                    translate_to=job.translate_to
+                )
+
+                # Save enhanced version
+                enhanced_filename = f"{input_path.stem}_{job.id}_enhanced.md"
+                enhanced_path = settings.output_dir / enhanced_filename
+
+                self._save_markdown(
+                    output_path=enhanced_path,
+                    input_filename=input_path.name,
+                    content=enhanced_result,
+                    timestamp_enabled=bool(job.enable_timestamp),
+                    enhanced=True
+                )
+
+                job.output_file = str(enhanced_path)
+
+            job.progress = 100.0
+            job.status = JobStatus.COMPLETED
+            job.completed_at = datetime.utcnow()
+            db_session.commit()
+
+            return job.output_file
+
+        except Exception as e:
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+            job.completed_at = datetime.utcnow()
+            db_session.commit()
+            raise
+
+    def enhance_transcript_sync(
+        self,
+        transcript: str,
+        prompt: Optional[str] = None,
+        translate_to: Optional[str] = None
+    ) -> str:
+        """
+        Synchronous version of enhance_transcript for Celery workers
+        """
+        enhancer = self._get_enhancer()
+
+        # Call the correct API method
+        result = enhancer.enhance_transcript(
+            input_content=transcript,
+            custom_prompt=prompt
+        )
+
+        # Check if enhancement was successful
+        if not result.get('success', False):
+            error_msg = result.get('error', 'Unknown enhancement error')
+            raise Exception(f"Enhancement failed: {error_msg}")
+
+        return result['enhanced_text']
+
+    def enhance_job_sync(self, job: Job, source_job: Job, db_session) -> str:
+        """
+        Synchronous version of enhance_job for Celery workers
+        """
+        try:
+            job.status = JobStatus.PROCESSING
+            job.started_at = datetime.utcnow()
+            job.progress = 0.0
+            db_session.commit()
+
+            # Read original transcript
+            with open(source_job.output_file, 'r', encoding='utf-8') as f:
+                original_content = f.read()
+
+            job.progress = 20.0
+            db_session.commit()
+
+            # Extract transcript content (skip markdown header)
+            lines = original_content.split('\n')
+            content_start = 0
+            for i, line in enumerate(lines):
+                if line.startswith('## Content'):
+                    content_start = i + 1
+                    break
+
+            transcript_text = '\n'.join(lines[content_start:]).strip()
+
+            job.progress = 30.0
+            db_session.commit()
+
+            # Enhance
+            enhanced_text = self.enhance_transcript_sync(
+                transcript=transcript_text,
+                prompt=job.enhancement_prompt,
+                translate_to=job.translate_to
+            )
+
+            job.progress = 80.0
+            db_session.commit()
+
+            # Save enhanced version
+            input_path = Path(source_job.input_file)
+            enhanced_filename = f"{input_path.stem}_{job.id}_enhanced.md"
+            enhanced_path = settings.output_dir / enhanced_filename
+
+            self._save_markdown(
+                output_path=enhanced_path,
+                input_filename=input_path.name,
+                content=enhanced_text,
+                timestamp_enabled=bool(source_job.enable_timestamp),
+                enhanced=True
+            )
+
+            job.output_file = str(enhanced_path)
+            job.progress = 100.0
+            job.status = JobStatus.COMPLETED
+            job.completed_at = datetime.utcnow()
+            db_session.commit()
+
+            return job.output_file
+
+        except Exception as e:
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+            job.completed_at = datetime.utcnow()
+            db_session.commit()
+            raise
+
 
 # Singleton instance
 whisper_service = WhisperService()

@@ -53,6 +53,9 @@ class Job(Base):
     progress = Column(Float, default=0.0)
     error_message = Column(Text, nullable=True)
 
+    # Archive status
+    archived = Column(Integer, default=0)  # 0=active, 1=archived
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)

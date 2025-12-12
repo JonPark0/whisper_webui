@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +14,7 @@ import re
 from typing import List
 
 from config import settings
-from database import get_db, Job, JobStatus, JobType, SessionLocal
+from database import get_db, Job, JobStatus, JobType
 from schemas import (
     TranscribeRequest,
     EnhanceRequest,
@@ -22,7 +22,7 @@ from schemas import (
     JobListResponse,
     UploadResponse
 )
-from whisper_service import whisper_service
+from celery_tasks import transcribe_audio_task, enhance_transcript_task
 
 # Configure logging
 logging.basicConfig(
@@ -210,13 +210,12 @@ async def upload_audio(file: UploadFile = File(...)):
 async def create_transcribe_job(
     filename: str,
     request: TranscribeRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Create a new transcription job
 
-    The job will be processed in the background
+    The job will be processed by Celery worker in parallel
     """
     # Verify file exists
     file_path = settings.upload_dir / filename
@@ -242,8 +241,9 @@ async def create_transcribe_job(
     db.commit()
     db.refresh(job)
 
-    # Process in background
-    background_tasks.add_task(process_transcribe_job, job.id)
+    # Submit to Celery worker queue (non-blocking)
+    transcribe_audio_task.delay(job.id)
+    logger.info(f"Submitted transcription job {job.id} to Celery queue")
 
     return JobResponse.from_orm(job)
 
@@ -251,13 +251,12 @@ async def create_transcribe_job(
 @app.post("/api/enhance", response_model=JobResponse)
 async def create_enhance_job(
     request: EnhanceRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Create a new enhancement job for an existing transcription
 
-    The job will be processed in the background
+    The job will be processed by Celery worker in parallel
     """
     # Get source job
     source_job = db.query(Job).filter(Job.id == request.job_id).first()
@@ -284,8 +283,9 @@ async def create_enhance_job(
     db.commit()
     db.refresh(job)
 
-    # Process in background
-    background_tasks.add_task(process_enhance_job, job.id, request.job_id)
+    # Submit to Celery worker queue (non-blocking)
+    enhance_transcript_task.delay(job.id, request.job_id)
+    logger.info(f"Submitted enhancement job {job.id} to Celery queue")
 
     return JobResponse.from_orm(job)
 
@@ -294,6 +294,7 @@ async def create_enhance_job(
 async def list_jobs(
     job_type: str = None,
     status: str = None,
+    archived: int = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -304,6 +305,7 @@ async def list_jobs(
     Query parameters:
     - job_type: Filter by job type (transcribe/enhance)
     - status: Filter by status (pending/processing/completed/failed)
+    - archived: Filter by archive status (0=active, 1=archived, None=all)
     - limit: Maximum number of jobs to return
     - offset: Number of jobs to skip
     """
@@ -314,6 +316,9 @@ async def list_jobs(
 
     if status:
         query = query.filter(Job.status == status)
+
+    if archived is not None:
+        query = query.filter(Job.archived == archived)
 
     total = query.count()
     jobs = query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
@@ -386,6 +391,36 @@ async def download_result(job_id: int, db: Session = Depends(get_db)):
     )
 
 
+@app.put("/api/jobs/{job_id}/archive")
+async def archive_job(job_id: int, db: Session = Depends(get_db)):
+    """Archive a job"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job.archived = 1
+    db.commit()
+    db.refresh(job)
+
+    return JobResponse.from_orm(job)
+
+
+@app.put("/api/jobs/{job_id}/unarchive")
+async def unarchive_job(job_id: int, db: Session = Depends(get_db)):
+    """Unarchive a job"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job.archived = 0
+    db.commit()
+    db.refresh(job)
+
+    return JobResponse.from_orm(job)
+
+
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: int, db: Session = Depends(get_db)):
     """Delete a job and its associated files"""
@@ -403,60 +438,6 @@ async def delete_job(job_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Job deleted successfully"}
-
-
-# Background task functions
-async def process_transcribe_job(job_id: int):
-    """Background task to process transcription job"""
-    db = SessionLocal()
-    try:
-        logger.info(f"Starting transcription job {job_id}")
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            await whisper_service.transcribe_audio(job, db)
-            logger.info(f"Completed transcription job {job_id}")
-        else:
-            logger.error(f"Job {job_id} not found")
-    except Exception as e:
-        logger.error(f"Error processing transcription job {job_id}: {e}")
-        # Update job status to failed
-        try:
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.status = JobStatus.FAILED
-                job.error_message = str(e)
-                db.commit()
-        except Exception as db_error:
-            logger.error(f"Failed to update job status: {db_error}")
-    finally:
-        db.close()
-
-
-async def process_enhance_job(job_id: int, source_job_id: int):
-    """Background task to process enhancement job"""
-    db = SessionLocal()
-    try:
-        logger.info(f"Starting enhancement job {job_id}")
-        job = db.query(Job).filter(Job.id == job_id).first()
-        source_job = db.query(Job).filter(Job.id == source_job_id).first()
-        if job and source_job:
-            await whisper_service.enhance_job(job, source_job, db)
-            logger.info(f"Completed enhancement job {job_id}")
-        else:
-            logger.error(f"Job {job_id} or source job {source_job_id} not found")
-    except Exception as e:
-        logger.error(f"Error processing enhancement job {job_id}: {e}")
-        # Update job status to failed
-        try:
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.status = JobStatus.FAILED
-                job.error_message = str(e)
-                db.commit()
-        except Exception as db_error:
-            logger.error(f"Failed to update job status: {db_error}")
-    finally:
-        db.close()
 
 
 if __name__ == "__main__":
