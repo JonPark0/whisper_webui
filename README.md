@@ -1,6 +1,6 @@
 # Whisper WebUI
 
-A web-based interface for [Whisper Transcribe](../whisper_transcribe), providing easy-to-use audio transcription and text enhancement features.
+A web-based interface for [Whisper Transcribe](https://github.com/jonpark0/whisper_transcribe), providing easy-to-use audio transcription and text enhancement features.
 
 ## Features
 
