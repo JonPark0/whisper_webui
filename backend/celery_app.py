@@ -23,6 +23,6 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,  # Process one task at a time per worker
-    worker_max_tasks_per_child=10,  # Restart worker after 10 tasks to prevent memory leaks
+    worker_max_tasks_per_child=3,  # Restart worker after 3 tasks to aggressively prevent memory leaks
     worker_pool="solo",  # Use solo pool to avoid multiprocessing issues with CUDA
 )

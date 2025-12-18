@@ -60,6 +60,9 @@ services:
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/0
       - C_FORCE_ROOT=false  # Disable Celery root warning
+      # PyTorch CUDA memory management optimizations
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
+      - CUDA_LAUNCH_BLOCKING=0
     depends_on:
       - redis
       - backend

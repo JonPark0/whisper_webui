@@ -5,8 +5,16 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import logging
 import threading
+import gc
 
 from config import settings
+
+# Import torch for GPU memory management
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 # Add whisper_transcribe to Python path
 sys.path.insert(0, settings.whisper_transcribe_path)
@@ -26,6 +34,15 @@ class WhisperService:
         self.enhancer = None
         self._transcriber_lock = threading.Lock()
         self._enhancer_lock = threading.Lock()
+
+    def _clear_gpu_cache(self):
+        """Clear GPU cache to free up memory"""
+        if TORCH_AVAILABLE and torch.cuda.is_available():
+            # Force garbage collection
+            gc.collect()
+            # Clear CUDA cache
+            torch.cuda.empty_cache()
+            logger.info("GPU cache cleared")
 
     def _get_transcriber(self) -> WhisperTranscriber:
         """Lazy load transcriber (thread-safe)"""
@@ -116,6 +133,9 @@ class WhisperService:
 
             # Extract the text result
             result = transcribe_result['text']
+
+            # Clear GPU cache after transcription to free memory
+            self._clear_gpu_cache()
 
             job.progress = 80.0
             db_session.commit()
@@ -356,6 +376,9 @@ class WhisperService:
 
             # Extract the text result
             result = transcribe_result['text']
+
+            # Clear GPU cache after transcription to free memory
+            self._clear_gpu_cache()
 
             job.progress = 80.0
             db_session.commit()
