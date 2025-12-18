@@ -34,7 +34,8 @@ const JobTable = ({ jobs, onJobUpdate, showArchive = false, showUnarchive = fals
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
+    // Parse UTC datetime and convert to local timezone
+    const date = new Date(dateString + (dateString.includes('Z') ? '' : 'Z'));
     const now = new Date();
     const diff = now - date;
     const minutes = Math.floor(diff / 60000);

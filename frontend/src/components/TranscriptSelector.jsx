@@ -4,6 +4,7 @@ export const TranscriptSelector = ({ onSelect, selectedJobIds = [], selectedJobI
   const { jobs, loading, error } = useJobs({
     job_type: 'transcribe',
     status: 'completed',
+    archived: 0,
   });
 
   // Filter out jobs that were auto-enhanced
@@ -19,7 +20,8 @@ export const TranscriptSelector = ({ onSelect, selectedJobIds = [], selectedJobI
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
+    // Parse UTC datetime and convert to local timezone
+    const date = new Date(dateString + (dateString.includes('Z') ? '' : 'Z'));
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
@@ -71,81 +73,110 @@ export const TranscriptSelector = ({ onSelect, selectedJobIds = [], selectedJobI
   }
 
   return (
-    <div className="w-full p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">
-        {multiSelect ? 'Select Transcripts to Enhance' : 'Select Transcript to Enhance'}
-      </h3>
-
-      <div className="space-y-3 max-h-96 overflow-y-auto">
-        {availableJobs.map((job) => (
-          <div
-            key={job.id}
-            onClick={() => onSelect(job.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${
-              isSelected(job.id)
-                ? 'border-blue-500 bg-blue-50 shadow-md'
-                : 'border-gray-200 hover:border-blue-300 hover:shadow-sm'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-gray-500">#{job.id}</span>
-                  {isSelected(job.id) && (
-                    <svg
-                      className="w-5 h-5 text-blue-500"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                    </svg>
-                  )}
-                </div>
-
-                <p className="text-sm font-medium text-gray-800 mb-1">
-                  {job.input_file.split('/').pop()}
-                </p>
-
-                <div className="text-xs text-gray-500 space-y-1">
-                  <p>Completed: {formatDate(job.completed_at)}</p>
-                  <p>Range: {formatDuration(job.start_time, job.end_time)}</p>
-                </div>
-
-                {/* Tags */}
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {job.enable_timestamp && (
-                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                      Timestamps
-                    </span>
-                  )}
-                  {job.translate_to && (
-                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                      {job.translate_to}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div
-                className={`${multiSelect ? 'w-5 h-5 rounded border-2' : 'w-5 h-5 rounded-full border-2'} flex items-center justify-center ${
-                  isSelected(job.id)
-                    ? 'border-blue-500 bg-blue-500'
-                    : 'border-gray-300'
+    <div className="w-full border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="max-h-96 overflow-y-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-12">
+                {multiSelect ? (
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-gray-300"
+                    checked={availableJobs.length > 0 && selectedJobIds.length === availableJobs.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        availableJobs.forEach(job => {
+                          if (!selectedJobIds.includes(job.id)) {
+                            onSelect(job.id);
+                          }
+                        });
+                      } else {
+                        selectedJobIds.forEach(id => onSelect(id));
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="sr-only">Select</span>
+                )}
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                ID
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                File
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Completed
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Range
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Options
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {availableJobs.map((job) => (
+              <tr
+                key={job.id}
+                onClick={() => onSelect(job.id)}
+                className={`cursor-pointer transition-colors ${
+                  isSelected(job.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                 }`}
               >
-                {isSelected(job.id) && (
-                  multiSelect ? (
-                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                    </svg>
-                  ) : (
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  )
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+                <td className="px-4 py-3 text-sm">
+                  <div
+                    className={`${multiSelect ? 'w-4 h-4 rounded border-2' : 'w-4 h-4 rounded-full border-2'} flex items-center justify-center ${
+                      isSelected(job.id)
+                        ? 'border-blue-500 bg-blue-500'
+                        : 'border-gray-300'
+                    }`}
+                  >
+                    {isSelected(job.id) && (
+                      multiSelect ? (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                        </svg>
+                      ) : (
+                        <div className="w-2 h-2 bg-white rounded-full"></div>
+                      )
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  <span className="font-mono text-gray-600">#{job.id}</span>
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  <div className="max-w-xs truncate text-gray-900 font-medium" title={job.input_file}>
+                    {job.input_file.split('/').pop()}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {formatDate(job.completed_at)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {formatDuration(job.start_time, job.end_time)}
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  <div className="flex flex-wrap gap-1">
+                    {job.enable_timestamp && (
+                      <span className="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
+                        Timestamps
+                      </span>
+                    )}
+                    {job.translate_to && (
+                      <span className="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
+                        {job.translate_to}
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

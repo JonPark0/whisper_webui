@@ -27,6 +27,9 @@ RUN python -c "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
     AutoModelForSpeechSeq2Seq.from_pretrained(model_id); \
     AutoProcessor.from_pretrained(model_id)"
 
+# Clone whisper_transcribe repository
+RUN git clone https://github.com/jonpark0/whisper_transcribe.git /whisper_transcribe
+
 # Copy application code
 COPY . .
 

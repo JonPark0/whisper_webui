@@ -84,54 +84,73 @@ export const TranscribePage = () => {
             <AudioUploader onUploadSuccess={handleUploadSuccess} />
           </div>
 
-          {/* Uploaded Files List */}
+          {/* Uploaded Files Table */}
           {uploadedFiles.length > 0 && (
             <div>
               <h2 className="text-xl font-semibold text-gray-800 mb-4">
                 2. Uploaded Files ({uploadedFiles.length})
               </h2>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {uploadedFiles.map((file) => (
-                  <div
-                    key={file.filename}
-                    className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-between"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {file.filename.split('/').pop()}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {Math.round(file.duration)}s
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      {submittingJobs[file.filename] ? (
-                        <span className="text-xs text-blue-600 flex items-center gap-1">
-                          <svg className="w-4 h-4 animate-spin" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8Z" />
-                          </svg>
-                          Adding...
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleSubmitSingle(file)}
-                          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                        >
-                          Add to Queue
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setUploadedFiles(prev => prev.filter(f => f.filename !== file.filename))}
-                        className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                        disabled={submittingJobs[file.filename]}
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="max-h-96 overflow-y-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          File Name
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Duration
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {uploadedFiles.map((file) => (
+                        <tr key={file.filename} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <div className="truncate max-w-xs" title={file.filename.split('/').pop()}>
+                              {file.filename.split('/').pop()}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {Math.round(file.duration)}s
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {submittingJobs[file.filename] ? (
+                                <span className="text-xs text-blue-600 flex items-center gap-1">
+                                  <svg className="w-4 h-4 animate-spin" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8Z" />
+                                  </svg>
+                                  Adding...
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleSubmitSingle(file)}
+                                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                                >
+                                  Add to Queue
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setUploadedFiles(prev => prev.filter(f => f.filename !== file.filename))}
+                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                disabled={submittingJobs[file.filename]}
+                                title="Remove"
+                              >
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
