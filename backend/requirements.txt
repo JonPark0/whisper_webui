@@ -13,7 +13,7 @@ ffmpeg-python>=0.2.0,<0.3.0
 soundfile>=0.12.0,<0.13.0
 
 # Gemini API
-google-generativeai>=0.8.0,<1.0.0
+google-genai>=1.0.0
 
 # Database and queue management
 sqlalchemy>=2.0.25,<2.1.0
