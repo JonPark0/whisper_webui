@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # Processing Configuration
     default_timeout: int = 3600
     enable_flash_attention: bool = False
+    pipeline_batch_size: int = 4  # Chunks processed simultaneously; lower = less VRAM
 
     # Database Configuration
     db_path: Path = Path("/app/data/whisper.db")

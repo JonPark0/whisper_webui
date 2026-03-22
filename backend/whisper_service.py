@@ -55,6 +55,7 @@ class WhisperService:
                     # Note: settings.whisper_model is ignored as the model is fixed in the transcriber
                     self.transcriber = WhisperTranscriber(
                         verbose=True,
+                        batch_size=settings.pipeline_batch_size,
                         use_flash_attn=settings.enable_flash_attention
                     )
                     # Load model on initialization
@@ -105,6 +106,9 @@ class WhisperService:
 
             if not input_path.exists():
                 raise FileNotFoundError(f"Input file not found: {job.input_file}")
+
+            # Free any cached GPU memory before starting transcription
+            self._clear_gpu_cache()
 
             # Progress callback for transcription
             def progress_update(update_data: dict):
@@ -348,6 +352,9 @@ class WhisperService:
 
             if not input_path.exists():
                 raise FileNotFoundError(f"Input file not found: {job.input_file}")
+
+            # Free any cached GPU memory before starting transcription
+            self._clear_gpu_cache()
 
             # Progress callback for transcription
             def progress_update(update_data: dict):
