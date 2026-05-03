@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     # API Configuration
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-flash-latest"
 
     # Whisper Configuration
     whisper_model: str = "openai/whisper-large-v3-turbo"

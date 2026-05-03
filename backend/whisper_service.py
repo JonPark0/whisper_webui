@@ -70,7 +70,7 @@ class WhisperService:
                 # Double-check locking pattern
                 if self.enhancer is None:
                     logger.info("Initializing transcript enhancer")
-                    self.enhancer = TranscriptEnhancer(verbose=True)
+                    self.enhancer = TranscriptEnhancer(verbose=True, model_name=settings.gemini_model)
                     # Setup Gemini API with the API key
                     if settings.gemini_api_key:
                         self.enhancer.setup_gemini(settings.gemini_api_key)
