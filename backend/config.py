@@ -10,9 +10,12 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
 
-    # Whisper Configuration
-    whisper_model: str = "openai/whisper-large-v3-turbo"
-    whisper_transcribe_path: str = "/whisper_transcribe"
+    # Qwen3-ASR Configuration
+    qwen_asr_model: str = "Qwen/Qwen3-ASR-1.7B"
+    qwen_aligner_model: str = "Qwen/Qwen3-ForcedAligner-0.6B"
+    qwen3_transcribe_path: str = "/qwen3_transcribe"
+    qwen_language: str = ""  # "" = auto-detect; canonical name (e.g. "Korean") to force
+    qwen_context: str = ""   # Optional hotwords/domain vocabulary hint
 
     # Server Configuration
     backend_port: int = 8000

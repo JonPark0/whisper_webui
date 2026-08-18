@@ -1,6 +1,6 @@
-# Local development override for mounting a sibling whisper_transcribe
+# Local development override for mounting a sibling qwen3_transcribe
 # checkout straight into the containers, so edits there take effect without
-# rebuilding the image (which otherwise only gets whisper_transcribe via the
+# rebuilding the image (which otherwise only gets qwen3_transcribe via the
 # `git clone` baked into backend/Dockerfile).
 #
 # Usage:
@@ -10,12 +10,12 @@
 # `docker compose` loads docker-compose.override.yml automatically when
 # present. Delete the file (or don't create it) to fall back to the image's
 # baked-in clone - this is why it's not committed as-is; a machine without a
-# sibling ../whisper_transcribe checkout would otherwise get an empty bind
+# sibling ../qwen3_transcribe checkout would otherwise get an empty bind
 # mount that shadows the image contents and breaks the import.
 services:
   backend:
     volumes:
-      - ../whisper_transcribe:/whisper_transcribe:ro
+      - ../qwen3_transcribe:/qwen3_transcribe:ro
   celery_worker:
     volumes:
-      - ../whisper_transcribe:/whisper_transcribe:ro
+      - ../qwen3_transcribe:/qwen3_transcribe:ro

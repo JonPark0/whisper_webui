@@ -16,10 +16,10 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-# Add whisper_transcribe to Python path
-sys.path.insert(0, settings.whisper_transcribe_path)
+# Add qwen3_transcribe to Python path
+sys.path.insert(0, settings.qwen3_transcribe_path)
 
-from core.transcriber import WhisperTranscriber
+from core.transcriber import Qwen3ASRTranscriber
 from core.enhancer import TranscriptEnhancer
 from database import Job, JobStatus, get_db
 
@@ -27,7 +27,11 @@ logger = logging.getLogger(__name__)
 
 
 class WhisperService:
-    """Service for handling Whisper transcription and enhancement"""
+    """Service for handling transcription and enhancement.
+
+    Despite the name (kept for git-diff parity with the `main` branch's
+    Whisper backend), this branch drives Qwen3-ASR via Qwen3ASRTranscriber.
+    """
 
     def __init__(self):
         self.transcriber = None
@@ -44,23 +48,25 @@ class WhisperService:
             torch.cuda.empty_cache()
             logger.info("GPU cache cleared")
 
-    def _get_transcriber(self) -> WhisperTranscriber:
+    def _get_transcriber(self) -> Qwen3ASRTranscriber:
         """Lazy load transcriber (thread-safe)"""
         if self.transcriber is None:
             with self._transcriber_lock:
                 # Double-check locking pattern
                 if self.transcriber is None:
-                    logger.info("Initializing Whisper transcriber")
-                    # WhisperTranscriber uses hardcoded openai/whisper-large-v3-turbo model
-                    # Note: settings.whisper_model is ignored as the model is fixed in the transcriber
-                    self.transcriber = WhisperTranscriber(
+                    logger.info("Initializing Qwen3-ASR transcriber")
+                    self.transcriber = Qwen3ASRTranscriber(
                         verbose=True,
                         batch_size=settings.pipeline_batch_size,
-                        use_flash_attn=settings.enable_flash_attention
+                        use_flash_attn=settings.enable_flash_attention,
+                        model_id=settings.qwen_asr_model,
+                        aligner_model_id=settings.qwen_aligner_model,
+                        language=settings.qwen_language or None,
+                        context=settings.qwen_context,
                     )
                     # Load model on initialization
                     self.transcriber.load_model()
-                    logger.info("Whisper transcriber loaded successfully")
+                    logger.info("Qwen3-ASR transcriber loaded successfully")
         return self.transcriber
 
     def _get_enhancer(self) -> TranscriptEnhancer:

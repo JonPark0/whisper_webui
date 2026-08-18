@@ -1,10 +1,15 @@
-# Whisper WebUI
+# Whisper WebUI (Qwen3-ASR branch)
 
-A web-based interface for [Whisper Transcribe](https://github.com/jonpark0/whisper_transcribe), providing easy-to-use audio transcription and text enhancement features.
+A web-based interface for [Qwen3 Transcribe](https://github.com/jonpark0/qwen3_transcribe), providing easy-to-use audio transcription and text enhancement features.
+
+> This is the `qwen3-asr` branch: same web UI as `main`, but the STT engine is
+> [Qwen3-ASR-1.7B](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) instead of
+> Whisper large-v3-turbo. See [`main`](https://github.com/jonpark0/whisper_webui)
+> for the Whisper version.
 
 ## Features
 
-- **Transcribe Tab**: Convert audio files to text using OpenAI Whisper
+- **Transcribe Tab**: Convert audio files to text using Qwen3-ASR
   - Audio file upload with preview
   - Start/End time selection with sliders
   - Real-time progress tracking
@@ -27,7 +32,7 @@ A web-based interface for [Whisper Transcribe](https://github.com/jonpark0/whisp
 
 - **Frontend**: Vite + TailwindCSS
 - **Backend**: FastAPI + Python
-- **AI Models**: OpenAI Whisper + Google Gemini
+- **AI Models**: Qwen3-ASR + Google Gemini
 - **Infrastructure**: Docker Compose
 
 ## Quick Start
@@ -61,8 +66,15 @@ All configuration is done via the `.env` file. See [.env.example](.env.example) 
 ### Optional Configuration
 
 **AI Models:**
-- `WHISPER_MODEL`: Whisper model to use (default: `openai/whisper-large-v3-turbo`)
+- `QWEN_ASR_MODEL`: Qwen3-ASR model to use (default: `Qwen/Qwen3-ASR-1.7B`)
+- `QWEN_ALIGNER_MODEL`: Forced aligner model, loaded only when timestamps are
+  requested (default: `Qwen/Qwen3-ForcedAligner-0.6B`)
+- `QWEN_LANGUAGE`: Force the recognition language using Qwen3-ASR canonical
+  names (e.g. `Korean`, `English`). Empty = auto-detect (default: empty)
+- `QWEN_CONTEXT`: Optional hotwords/domain vocabulary hint (default: empty)
 - `ENABLE_FLASH_ATTENTION`: Enable Flash Attention 2 for faster GPU processing (default: `false`)
+- `PIPELINE_BATCH_SIZE`: Chunks processed simultaneously by the ASR model;
+  lower values reduce VRAM usage at the cost of speed (default: `4`)
 
 **Server Settings:**
 - `BACKEND_PORT`: Backend server port (default: `8000`)

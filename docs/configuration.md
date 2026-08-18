@@ -5,7 +5,7 @@ Complete guide to configuring Whisper WebUI.
 ## Table of Contents
 
 - [Environment Variables](#environment-variables)
-- [Whisper Configuration](#whisper-configuration)
+- [Qwen3-ASR Configuration](#qwen3-asr-configuration)
 - [Server Configuration](#server-configuration)
 - [Security Configuration](#security-configuration)
 - [File Handling](#file-handling)
@@ -48,32 +48,49 @@ GEMINI_API_KEY=your-gemini-api-key-here
 
 **Paid tier:** Higher limits, better performance
 
-## Whisper Configuration
+## Qwen3-ASR Configuration
+
+> This is the `qwen3-asr` branch. See `main` for the Whisper equivalent of
+> this section.
 
 ### Model Selection
 
 ```bash
-WHISPER_MODEL=openai/whisper-large-v3-turbo
+QWEN_ASR_MODEL=Qwen/Qwen3-ASR-1.7B
+QWEN_ALIGNER_MODEL=Qwen/Qwen3-ForcedAligner-0.6B
 ```
 
-**Available models:**
+**Available ASR models:**
 
-| Model | Size | Speed | Accuracy | VRAM |
-|-------|------|-------|----------|------|
-| `openai/whisper-tiny` | 39M | Fastest | Low | ~1GB |
-| `openai/whisper-base` | 74M | Fast | Medium | ~1GB |
-| `openai/whisper-small` | 244M | Medium | Good | ~2GB |
-| `openai/whisper-medium` | 769M | Slow | Better | ~5GB |
-| `openai/whisper-large-v2` | 1550M | Slower | Best | ~10GB |
-| `openai/whisper-large-v3` | 1550M | Slower | Best | ~10GB |
-| `openai/whisper-large-v3-turbo` | 809M | Fast | Best | ~6GB |
+| Model | Params | Speed | Accuracy | VRAM (bf16) |
+|-------|--------|-------|----------|--------------|
+| `Qwen/Qwen3-ASR-0.6B` | 600M | Faster | Good | ~1.5GB |
+| `Qwen/Qwen3-ASR-1.7B` | 1.7B | Fast | Best (open-source SOTA) | ~3.5GB |
+
+**Forced aligner** (only loaded when `enable_timestamp` is requested by a
+job): `Qwen/Qwen3-ForcedAligner-0.6B`, ~1.2GB VRAM. Qwen3-ASR does not emit
+timestamps on its own - the aligner runs a second pass over the audio +
+transcript to produce word-level spans, which are then regrouped into
+segments for the transcript viewer.
+
+**Recognition language and hotwords:**
+
+```bash
+# "" = auto-detect. Canonical Qwen3-ASR name (not an ISO code), e.g. "Korean".
+QWEN_LANGUAGE=
+# Optional domain vocabulary / names to bias transcription.
+QWEN_CONTEXT=
+```
+
+Supported languages: Chinese, English, Cantonese, Arabic, German, French,
+Spanish, Portuguese, Indonesian, Italian, Korean, Russian, Thai, Vietnamese,
+Japanese, Turkish, Hindi, Malay, Dutch, Swedish, Danish, Finnish, Polish,
+Czech, Filipino, Persian, Greek, Romanian, Hungarian, Macedonian.
 
 **Recommendations:**
 
-- **Development:** `whisper-base` or `whisper-small`
-- **Production (CPU):** `whisper-small` or `whisper-medium`
-- **Production (GPU):** `whisper-large-v3-turbo` (best balance)
-- **Best Quality:** `whisper-large-v3`
+- **Development / lower VRAM:** `Qwen/Qwen3-ASR-0.6B`
+- **Production (GPU):** `Qwen/Qwen3-ASR-1.7B` (best accuracy, still fast)
 
 ### Flash Attention
 
@@ -436,8 +453,9 @@ keepalive_requests 100;
 
 ```bash
 GEMINI_API_KEY=your-key
-WHISPER_MODEL=openai/whisper-base
+QWEN_ASR_MODEL=Qwen/Qwen3-ASR-0.6B
 ENABLE_FLASH_ATTENTION=false
+PIPELINE_BATCH_SIZE=2
 RELOAD_MODE=true
 LOG_LEVEL=DEBUG
 LOG_FORMAT=text
@@ -447,8 +465,10 @@ LOG_FORMAT=text
 
 ```bash
 GEMINI_API_KEY=your-production-key
-WHISPER_MODEL=openai/whisper-large-v3-turbo
+QWEN_ASR_MODEL=Qwen/Qwen3-ASR-1.7B
+QWEN_ALIGNER_MODEL=Qwen/Qwen3-ForcedAligner-0.6B
 ENABLE_FLASH_ATTENTION=true
+PIPELINE_BATCH_SIZE=4
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 RELOAD_MODE=false
@@ -463,8 +483,10 @@ LOG_FORMAT=json
 
 ```bash
 GEMINI_API_KEY=your-key
-WHISPER_MODEL=openai/whisper-large-v3-turbo
+QWEN_ASR_MODEL=Qwen/Qwen3-ASR-1.7B
+QWEN_ALIGNER_MODEL=Qwen/Qwen3-ForcedAligner-0.6B
 ENABLE_FLASH_ATTENTION=true
+PIPELINE_BATCH_SIZE=8
 MAX_FILE_SIZE=2GB
 DEFAULT_TIMEOUT=14400
 LOG_LEVEL=WARNING

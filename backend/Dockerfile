@@ -21,14 +21,19 @@ RUN pip install --no-cache-dir nvidia-ml-py
 RUN grep -v -E "^(torch|flash-attn|ninja|packaging)" requirements.txt > requirements-filtered.txt && \
     pip install --no-cache-dir -r requirements-filtered.txt
 
-# Download Whisper model on build
-RUN python -c "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor; \
-    model_id = 'openai/whisper-large-v3-turbo'; \
-    AutoModelForSpeechSeq2Seq.from_pretrained(model_id); \
-    AutoProcessor.from_pretrained(model_id)"
+# Download Qwen3-ASR + forced aligner models on build.
+# HF_HOME is redirected to a world-readable location because this stage runs
+# as root but the container itself runs as USER 1000 (see below) - the
+# default ~/.cache/huggingface would end up under /root and be unreadable at
+# runtime, forcing a re-download on first job.
+ENV HF_HOME=/opt/hf-cache
+RUN python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('Qwen/Qwen3-ASR-1.7B'); \
+    snapshot_download('Qwen/Qwen3-ForcedAligner-0.6B')" && \
+    chmod -R a+rX /opt/hf-cache
 
-# Clone whisper_transcribe repository
-RUN git clone https://github.com/jonpark0/whisper_transcribe.git /whisper_transcribe
+# Clone qwen3_transcribe repository
+RUN git clone https://github.com/jonpark0/qwen3_transcribe.git /qwen3_transcribe
 
 # Copy application code
 COPY . .
