@@ -62,16 +62,25 @@ QWEN_ALIGNER_MODEL=Qwen/Qwen3-ForcedAligner-0.6B
 
 **Available ASR models:**
 
-| Model | Params | Speed | Accuracy | VRAM (bf16) |
-|-------|--------|-------|----------|--------------|
-| `Qwen/Qwen3-ASR-0.6B` | 600M | Faster | Good | ~1.5GB |
-| `Qwen/Qwen3-ASR-1.7B` | 1.7B | Fast | Best (open-source SOTA) | ~3.5GB |
+| Model | Params | Speed | Accuracy | VRAM (bf16, measured) |
+|-------|--------|-------|----------|------------------------|
+| `Qwen/Qwen3-ASR-0.6B` | 600M | Faster | Good | not measured, expect roughly half of 1.7B |
+| `Qwen/Qwen3-ASR-1.7B` | 1.7B | Fast | Best (open-source SOTA) | ~4.6GB loaded (short-clip inference) |
 
 **Forced aligner** (only loaded when `enable_timestamp` is requested by a
-job): `Qwen/Qwen3-ForcedAligner-0.6B`, ~1.2GB VRAM. Qwen3-ASR does not emit
-timestamps on its own - the aligner runs a second pass over the audio +
-transcript to produce word-level spans, which are then regrouped into
-segments for the transcript viewer.
+job): `Qwen/Qwen3-ForcedAligner-0.6B`. Qwen3-ASR does not emit timestamps on
+its own - the aligner runs a second pass over the audio + transcript to
+produce word-level spans, which are then regrouped into segments for the
+transcript viewer.
+
+> **Measured on an RTX 3060 Laptop (6144MiB VRAM):** ASR-1.7B alone loads at
+> ~4.6GB; loading the aligner on top for a timestamped job pushes it to
+> ~5.9-6.0GB - it worked in this test, but with only ~150-250MiB of
+> headroom left. On a 6GB-class GPU, expect timestamped jobs to be the
+> tightest case, more so than raw model size suggests once CUDA context and
+> generation activations are counted. If you see CUDA OOM on timestamped
+> jobs specifically, lower `PIPELINE_BATCH_SIZE` first (see below) before
+> assuming the setup is broken.
 
 **Recognition language and hotwords:**
 
