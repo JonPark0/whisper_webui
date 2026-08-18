@@ -32,6 +32,15 @@ RUN python -c "from huggingface_hub import snapshot_download; \
     snapshot_download('Qwen/Qwen3-ForcedAligner-0.6B')" && \
     chmod -R a+rX /opt/hf-cache
 
+# Once models are baked in, stop huggingface_hub from touching the network or
+# the (now read-only-to-UID-1000) cache directory at runtime. Without this,
+# every model load tries to write cache-staleness markers (e.g. .no_exist)
+# under /opt/hf-cache, which USER 1000 can't do (cache dir is owned by root
+# from this build stage) - harmless but spams "Permission denied" in worker
+# logs on every job. Offline mode also means the container works with no
+# internet access and skips a remote HEAD-check round trip on every job.
+ENV HF_HUB_OFFLINE=1
+
 # Clone qwen3_transcribe repository
 RUN git clone https://github.com/jonpark0/qwen3_transcribe.git /qwen3_transcribe
 
