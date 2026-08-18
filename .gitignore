@@ -43,6 +43,7 @@ logs/
 
 # Docker
 *.tar
+docker-compose.override.yml
 
 # Jupyter Notebook
 .ipynb_checkpoints
