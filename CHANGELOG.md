@@ -5,9 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2026-09-25
 
 ### Changed
-- **STT engine**: faster-whisper (CTranslate2) is the default (`STT_ENGINE=faster`); the
-  transformers pipeline remains selectable. Measured on an RTX 3060 6 GB with 14.6 min of
-  Korean speech: 51x realtime, 3.3 GB peak, output identical to the script.
+- **Qwen3-ASR long audio**: `QWEN_MAX_CHUNK_SEC` (default 60) makes qwen3_transcribe split
+  audio at silences and decode the pieces in batches. Measured on an RTX 3060 6 GB with a
+  12-minute file: previously CUDA OOM; now 14.5x realtime at 5.1 GB peak (batch 4, no
+  timestamps). Timestamped jobs at batch 4 still need ~6.8 GB — use `PIPELINE_BATCH_SIZE=2`
+  on 6 GB cards.
 - **UI redesign** after the PALNARIUM reference (Figma "Transcribe WebUI — Design System",
   v2): Exo 2 / Anta / Pretendard (self-hosted, no CDN), monochrome ink accent with colour
   reserved for status, text-link navigation and row actions, split page layout, Light/Dark

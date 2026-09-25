@@ -265,10 +265,10 @@ options the engine ignores.
 **Response:**
 ```json
 {
-  "engine": "faster-whisper",
-  "model": "deepdml/faster-whisper-large-v3-turbo-ct2",
+  "engine": "Qwen3-ASR",
+  "model": "Qwen/Qwen3-ASR-1.7B",
   "manual_chunking": false,
-  "max_chunk_sec": null,
+  "max_chunk_sec": 60.0,
   "enhancer": "Google Gemini",
   "enhancer_model": "gemini-flash-latest",
   "enhancer_configured": true

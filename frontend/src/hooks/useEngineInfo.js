@@ -30,5 +30,7 @@ export const useEngineInfo = () => {
 export const engineLabel = (info) => {
   if (!info?.engine) return '';
   const model = info.model ? info.model.split('/').pop().replace(/^faster-whisper-|-ct2$/g, '') : '';
-  return model ? `${info.engine} · ${model}` : info.engine;
+  if (!model) return info.engine;
+  // "Qwen3-ASR-1.7B" already names the engine; don't repeat it.
+  return model.toLowerCase().includes(info.engine.toLowerCase()) ? model : `${info.engine} · ${model}`;
 };
