@@ -209,6 +209,7 @@ Get a list of all jobs with optional filtering.
 - `job_type` (string): Filter by type (`transcribe` or `enhance`)
 - `status` (string): Filter by status (`pending`, `processing`, `completed`, `failed`)
 - `archived` (int): Filter by archive status (`0`=active, `1`=archived, omit for all)
+- `q` (string): Case-insensitive substring of the input file name (`%`/`_` match literally)
 - `limit` (int): Max results to return (default: 100)
 - `offset` (int): Number of results to skip (default: 0)
 
@@ -238,6 +239,40 @@ curl "http://localhost:8000/api/jobs?status=failed"
 
 # Pagination
 curl "http://localhost:8000/api/jobs?limit=20&offset=40"
+
+# Search by file name
+curl "http://localhost:8000/api/jobs?q=meeting"
+```
+
+### Queue Stats
+
+Counts for the dashboard summary. "Today" is the current UTC day.
+
+**Endpoint:** `GET /api/stats`
+
+**Response:**
+```json
+{ "running": 1, "queued": 2, "done_today": 14, "audio_seconds_today": 22320.0 }
+```
+
+### Engine Info
+
+Which STT engine the backend runs, so the UI can label itself and hide
+options the engine ignores.
+
+**Endpoint:** `GET /api/info`
+
+**Response:**
+```json
+{
+  "engine": "faster-whisper",
+  "model": "deepdml/faster-whisper-large-v3-turbo-ct2",
+  "manual_chunking": false,
+  "max_chunk_sec": null,
+  "enhancer": "Google Gemini",
+  "enhancer_model": "gemini-flash-latest",
+  "enhancer_configured": true
+}
 ```
 
 ### Get Job Details
@@ -258,6 +293,8 @@ Get detailed information about a specific job.
   "input_file": "/app/uploads/audio_abc12345.mp3",
   "output_file": "/app/outputs/transcript_1_20240115.md",
   "progress": 100,
+  "stage_message": "Done",
+  "audio_duration": 1285.4,
   "created_at": "2024-01-15T10:30:00",
   "completed_at": "2024-01-15T10:32:15",
   ...
