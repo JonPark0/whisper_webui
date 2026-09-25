@@ -11,7 +11,10 @@ import logging
 import uuid
 import mimetypes
 import re
+from datetime import datetime
 from typing import List
+
+from sqlalchemy import func
 
 from config import settings
 from database import get_db, Job, JobStatus, JobType
@@ -20,6 +23,7 @@ from schemas import (
     EnhanceRequest,
     JobResponse,
     JobListResponse,
+    StatsResponse,
     UploadResponse
 )
 from celery_tasks import transcribe_audio_task, enhance_transcript_task
@@ -314,6 +318,7 @@ async def list_jobs(
     job_type: str = None,
     status: str = None,
     archived: int = None,
+    q: str = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -325,6 +330,7 @@ async def list_jobs(
     - job_type: Filter by job type (transcribe/enhance)
     - status: Filter by status (pending/processing/completed/failed)
     - archived: Filter by archive status (0=active, 1=archived, None=all)
+    - q: Case-insensitive substring match on the input file name
     - limit: Maximum number of jobs to return
     - offset: Number of jobs to skip
     """
@@ -339,12 +345,34 @@ async def list_jobs(
     if archived is not None:
         query = query.filter(Job.archived == archived)
 
+    if q:
+        # Escape LIKE wildcards so a search for "50%" means the literal text.
+        pattern = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.filter(Job.input_file.ilike(f"%{pattern}%", escape="\\"))
+
     total = query.count()
     jobs = query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
 
     return JobListResponse(
         jobs=[JobResponse.from_orm(job) for job in jobs],
         total=total
+    )
+
+
+@app.get("/api/stats", response_model=StatsResponse)
+async def get_stats(db: Session = Depends(get_db)):
+    """Queue counts and today's completed transcription volume (UTC day)."""
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    done_today = db.query(Job).filter(
+        Job.job_type == JobType.TRANSCRIBE,
+        Job.status == JobStatus.COMPLETED,
+        Job.completed_at >= today,
+    )
+    return StatsResponse(
+        running=db.query(Job).filter(Job.status == JobStatus.PROCESSING).count(),
+        queued=db.query(Job).filter(Job.status == JobStatus.PENDING).count(),
+        done_today=done_today.count(),
+        audio_seconds_today=done_today.with_entities(func.coalesce(func.sum(Job.audio_duration), 0.0)).scalar() or 0.0,
     )
 
 
