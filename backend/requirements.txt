@@ -12,6 +12,14 @@ pydub>=0.25.0,<0.26.0
 ffmpeg-python>=0.2.0,<0.3.0
 soundfile>=0.12.0,<0.13.0
 
+# faster-whisper (CTranslate2) engine - STT_ENGINE=faster (default).
+# CTranslate2's CUDA wheels link against CUDA 12 cuBLAS/cuDNN, which the
+# CUDA 13 base image does not ship; the cu12 runtime libs are installed
+# alongside and put on LD_LIBRARY_PATH in the Dockerfile.
+faster-whisper>=1.1.0,<2.0.0
+nvidia-cublas-cu12
+nvidia-cudnn-cu12>=9,<10
+
 # Gemini API
 google-genai>=1.0.0
 

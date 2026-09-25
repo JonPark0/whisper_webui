@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-export const TranscribeOptions = ({ onChange }) => {
+export const TranscribeOptions = ({ onChange, engineInfo }) => {
   const [options, setOptions] = useState({
     enable_timestamp: true,
     enable_chunked: false,
@@ -10,13 +10,34 @@ export const TranscribeOptions = ({ onChange }) => {
     enhancement_prompt: '',
   });
 
+  // Report the initial defaults too: the parent submits whatever it last
+  // received, so without this a job created before touching any control was
+  // sent with none of these options (e.g. timestamps shown ON but sent OFF).
+  useEffect(() => {
+    if (onChange) {
+      onChange(options);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleChange = (key, value) => {
     const newOptions = { ...options, [key]: value };
+    // Translation is performed by the Gemini clean-up step, so it is only
+    // meaningful while auto-enhance is on.
+    if (key === 'auto_enhance' && !value) {
+      newOptions.translate_to = '';
+    }
     setOptions(newOptions);
     if (onChange) {
       onChange(newOptions);
     }
   };
+
+  // Engines that split long audio themselves (Qwen3-ASR) ignore the per-job
+  // chunk settings; hide them instead of offering a no-op. Unknown engine
+  // (info not loaded yet / older backend) keeps the old behaviour.
+  const showChunking = engineInfo?.manual_chunking !== false;
+  const enhancerUnavailable = engineInfo && engineInfo.enhancer_configured === false;
 
   return (
     <div className="w-full p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
@@ -42,7 +63,14 @@ export const TranscribeOptions = ({ onChange }) => {
           </label>
         </div>
 
+        {!showChunking && engineInfo?.max_chunk_sec && (
+          <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3">
+            Long audio is split automatically at silences into pieces of up to {Math.round(engineInfo.max_chunk_sec)} seconds.
+          </p>
+        )}
+
         {/* Chunked Processing */}
+        {showChunking && (
         <div className="flex items-center justify-between">
           <div>
             <label className="text-sm font-medium text-gray-700">
@@ -61,8 +89,10 @@ export const TranscribeOptions = ({ onChange }) => {
           </label>
         </div>
 
+        )}
+
         {/* Chunk Length */}
-        {options.enable_chunked && (
+        {showChunking && options.enable_chunked && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Chunk Length (seconds)
@@ -72,35 +102,11 @@ export const TranscribeOptions = ({ onChange }) => {
               min="10"
               max="300"
               value={options.chunk_length}
-              onChange={(e) => handleChange('chunk_length', parseInt(e.target.value))}
+              onChange={(e) => handleChange('chunk_length', parseInt(e.target.value, 10) || 30)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         )}
-
-        {/* Translation */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Translate To (optional)
-          </label>
-          <select
-            value={options.translate_to}
-            onChange={(e) => handleChange('translate_to', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">No translation</option>
-            <option value="en">English</option>
-            <option value="ko">Korean</option>
-            <option value="es">Spanish</option>
-            <option value="fr">French</option>
-            <option value="de">German</option>
-            <option value="ja">Japanese</option>
-            <option value="zh">Chinese</option>
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            Translate audio to target language
-          </p>
-        </div>
 
         {/* Auto Enhancement */}
         <div className="pt-4 border-t border-gray-200">
@@ -117,6 +123,7 @@ export const TranscribeOptions = ({ onChange }) => {
               <input
                 type="checkbox"
                 checked={options.auto_enhance}
+                disabled={enhancerUnavailable}
                 onChange={(e) => handleChange('auto_enhance', e.target.checked)}
                 className="sr-only peer"
               />
@@ -124,9 +131,39 @@ export const TranscribeOptions = ({ onChange }) => {
             </label>
           </div>
 
+          {enhancerUnavailable && (
+            <p className="text-xs text-amber-700 mb-3">
+              GEMINI_API_KEY is not configured on the server, so clean-up and translation are unavailable.
+            </p>
+          )}
+
           {/* Enhancement Prompt */}
           {options.auto_enhance && (
             <div>
+              {/* Translation (performed by Gemini during clean-up) */}
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Translate To (optional)
+                </label>
+                <select
+                  value={options.translate_to}
+                  onChange={(e) => handleChange('translate_to', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No translation</option>
+                  <option value="en">English</option>
+                  <option value="ko">Korean</option>
+                  <option value="es">Spanish</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="ja">Japanese</option>
+                  <option value="zh">Chinese</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Gemini translates the cleaned-up transcript
+                </p>
+              </div>
+
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Custom Enhancement Prompt (optional)
               </label>

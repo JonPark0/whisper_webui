@@ -134,6 +134,30 @@ async def root():
     }
 
 
+@app.get("/api/info")
+async def engine_info():
+    """
+    Describe the STT engine this backend runs, so the UI can label itself
+    and hide options the engine handles on its own.
+    """
+    # Imported lazily: whisper_service pulls in torch/transformers.
+    from whisper_service import active_engine
+
+    faster = active_engine() == "faster"
+    return {
+        "engine": "faster-whisper" if faster else "Whisper",
+        "model": settings.faster_whisper_model if faster else settings.whisper_model,
+        # Both engines segment long audio internally (VAD for faster-whisper,
+        # 30s pipeline windows for transformers); the per-job chunk options
+        # are not read by the service.
+        "manual_chunking": False,
+        "max_chunk_sec": None,
+        "enhancer": "Google Gemini",
+        "enhancer_model": settings.gemini_model,
+        "enhancer_configured": bool(settings.gemini_api_key),
+    }
+
+
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_audio(file: UploadFile = File(...)):
     """

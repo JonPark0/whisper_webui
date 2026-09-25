@@ -3,6 +3,7 @@ import { AudioUploader } from '../components/AudioUploader';
 import { TranscribeOptions } from '../components/TranscribeOptions';
 import { JobQueue } from '../components/JobQueue';
 import { apiService } from '../services/api';
+import { useEngineInfo } from '../hooks/useEngineInfo';
 
 export const TranscribePage = () => {
   const [uploadedFiles, setUploadedFiles] = useState([]);
@@ -10,6 +11,7 @@ export const TranscribePage = () => {
   const [submittingJobs, setSubmittingJobs] = useState({});
   const [error, setError] = useState(null);
   const jobQueueRefetchRef = useRef(null);
+  const engineInfo = useEngineInfo();
 
   const handleUploadSuccess = (fileInfo) => {
     // Add new file to the list
@@ -71,7 +73,7 @@ export const TranscribePage = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Transcribe Audio</h1>
         <p className="text-gray-600">
-          Upload audio files and convert them to text using Whisper AI
+          Upload audio files and convert them to text{engineInfo?.engine ? ` using ${engineInfo.engine}` : ''}
         </p>
       </div>
 
@@ -115,7 +117,9 @@ export const TranscribePage = () => {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
-                            {Math.round(file.duration)}s
+                            {file.duration == null
+                              ? '—'
+                              : `${Math.floor(file.duration / 60)}:${String(Math.round(file.duration % 60)).padStart(2, '0')}`}
                           </td>
                           <td className="px-4 py-3 text-sm text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -163,7 +167,7 @@ export const TranscribePage = () => {
             <h2 className="text-xl font-semibold text-gray-800 mb-4">
               2. Configure Options
             </h2>
-            <TranscribeOptions onChange={setTranscribeOptions} />
+            <TranscribeOptions onChange={setTranscribeOptions} engineInfo={engineInfo} />
           </div>
 
           {/* Batch Submit Button */}

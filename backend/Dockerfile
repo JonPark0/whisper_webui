@@ -21,11 +21,23 @@ RUN pip install --no-cache-dir nvidia-ml-py
 RUN grep -v -E "^(torch|flash-attn|ninja|packaging)" requirements.txt > requirements-filtered.txt && \
     pip install --no-cache-dir -r requirements-filtered.txt
 
-# Download Whisper model on build
+# Download Whisper models on build (both engines, so STT_ENGINE can be
+# switched without a rebuild). The CT2 model is a float16 conversion of the
+# same openai/whisper-large-v3-turbo weights.
 RUN python -c "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor; \
     model_id = 'openai/whisper-large-v3-turbo'; \
     AutoModelForSpeechSeq2Seq.from_pretrained(model_id); \
-    AutoProcessor.from_pretrained(model_id)"
+    AutoProcessor.from_pretrained(model_id)" && \
+    python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('deepdml/faster-whisper-large-v3-turbo-ct2')"
+
+# faster-whisper/CTranslate2 needs CUDA 12 cuBLAS + cuDNN at runtime; expose
+# the pip-installed cu12 libs under a stable path (independent of the Python
+# version's site-packages layout) and put them on the loader path.
+RUN mkdir -p /opt/cuda12 && \
+    ln -s "$(python -c 'import nvidia.cublas.lib as m, os; print(os.path.dirname(m.__file__))')" /opt/cuda12/cublas && \
+    ln -s "$(python -c 'import nvidia.cudnn.lib as m, os; print(os.path.dirname(m.__file__))')" /opt/cuda12/cudnn
+ENV LD_LIBRARY_PATH=/opt/cuda12/cublas:/opt/cuda12/cudnn:${LD_LIBRARY_PATH}
 
 # Clone whisper_transcribe repository
 RUN git clone https://github.com/jonpark0/whisper_transcribe.git /whisper_transcribe
