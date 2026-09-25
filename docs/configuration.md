@@ -91,6 +91,24 @@ QWEN_LANGUAGE=
 QWEN_CONTEXT=
 ```
 
+**Long audio:**
+
+```bash
+# Split long audio at the quietest point near every N seconds and decode
+# PIPELINE_BATCH_SIZE pieces per generate() call.
+QWEN_MAX_CHUNK_SEC=60
+```
+
+Without this, `qwen-asr` feeds up to 20 minutes of audio into a single
+`generate()` call. Measured on an RTX 3060 Laptop (6GB) with a 12-minute
+file: the old path hit CUDA OOM (tried to allocate 5.2GiB) with or without
+batching, and a timestamped run took 22 minutes (0.54x realtime) because it
+spilled into shared system memory. With 60s pieces and batch 4 the same
+file took 50s (14.5x realtime, 5.1GB peak). 120s/180s pieces were slower
+and repeated text far more often, so 60 is the default. The per-job
+"Chunked processing" option in the UI is hidden for this engine because it
+is not used.
+
 Supported languages: Chinese, English, Cantonese, Arabic, German, French,
 Spanish, Portuguese, Indonesian, Italian, Korean, Russian, Thai, Vietnamese,
 Japanese, Turkish, Hindi, Malay, Dutch, Swedish, Danish, Finnish, Polish,

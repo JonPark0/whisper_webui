@@ -2,9 +2,11 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import { TranscribePage } from './pages/TranscribePage';
 import { EnhancePage } from './pages/EnhancePage';
 import ArchivePage from './pages/ArchivePage';
+import { useEngineInfo } from './hooks/useEngineInfo';
 
 const Navigation = () => {
   const location = useLocation();
+  const engineInfo = useEngineInfo();
 
   const isActive = (path) => {
     return location.pathname === path;
@@ -29,7 +31,12 @@ const Navigation = () => {
                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
               />
             </svg>
-            <h1 className="ml-3 text-xl font-bold text-gray-900">Whisper WebUI</h1>
+            <h1 className="ml-3 text-xl font-bold text-gray-900">Transcribe</h1>
+            {engineInfo?.engine && (
+              <span className="ml-3 px-2 py-0.5 text-xs font-mono text-gray-600 bg-gray-100 rounded-full">
+                {engineInfo.engine}
+              </span>
+            )}
           </div>
 
           {/* Navigation Tabs */}
@@ -72,6 +79,8 @@ const Navigation = () => {
 };
 
 function App() {
+  const engineInfo = useEngineInfo();
+
   return (
     <Router
       future={{
@@ -94,7 +103,7 @@ function App() {
         <footer className="bg-white border-t border-gray-200 mt-12">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <p className="text-center text-sm text-gray-500">
-              Powered by OpenAI Whisper & Google Gemini
+              Powered by {engineInfo?.engine || 'speech-to-text'} & Google Gemini
             </p>
           </div>
         </footer>

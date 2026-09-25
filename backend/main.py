@@ -134,6 +134,25 @@ async def root():
     }
 
 
+@app.get("/api/info")
+async def engine_info():
+    """
+    Describe the STT engine this backend runs, so the UI can label itself
+    and hide options the engine handles on its own.
+    """
+    return {
+        "engine": "Qwen3-ASR",
+        "model": settings.qwen_asr_model,
+        # Long audio is split and batched inside the transcriber; the
+        # per-job chunk options are ignored by this engine.
+        "manual_chunking": False,
+        "max_chunk_sec": settings.qwen_max_chunk_sec,
+        "enhancer": "Google Gemini",
+        "enhancer_model": settings.gemini_model,
+        "enhancer_configured": bool(settings.gemini_api_key),
+    }
+
+
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_audio(file: UploadFile = File(...)):
     """

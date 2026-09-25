@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 import logging
+import inspect
 import threading
 import gc
 
@@ -24,6 +25,18 @@ from core.enhancer import TranscriptEnhancer
 from database import Job, JobStatus, get_db
 
 logger = logging.getLogger(__name__)
+
+# Language names for the enhancer's translation instruction. The UI sends
+# ISO 639-1 codes; Gemini follows a plain language name more reliably.
+TRANSLATION_LANGUAGE_NAMES = {
+    "en": "English",
+    "ko": "Korean",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "ja": "Japanese",
+    "zh": "Chinese",
+}
 
 
 class WhisperService:
@@ -55,7 +68,7 @@ class WhisperService:
                 # Double-check locking pattern
                 if self.transcriber is None:
                     logger.info("Initializing Qwen3-ASR transcriber")
-                    self.transcriber = Qwen3ASRTranscriber(
+                    kwargs = dict(
                         verbose=True,
                         batch_size=settings.pipeline_batch_size,
                         use_flash_attn=settings.enable_flash_attention,
@@ -64,6 +77,17 @@ class WhisperService:
                         language=settings.qwen_language or None,
                         context=settings.qwen_context,
                     )
+                    # qwen3_transcribe is cloned at image build time; older
+                    # checkouts predate max_chunk_sec (and decode long files
+                    # in one piece, which can exhaust VRAM).
+                    if "max_chunk_sec" in inspect.signature(Qwen3ASRTranscriber.__init__).parameters:
+                        kwargs["max_chunk_sec"] = settings.qwen_max_chunk_sec
+                    else:
+                        logger.warning(
+                            "qwen3_transcribe does not support max_chunk_sec; long files "
+                            "will be decoded in one piece. Rebuild the image to update it."
+                        )
+                    self.transcriber = Qwen3ASRTranscriber(**kwargs)
                     # Load model on initialization
                     self.transcriber.load_model()
                     logger.info("Qwen3-ASR transcriber loaded successfully")
@@ -201,6 +225,31 @@ class WhisperService:
             db_session.commit()
             raise
 
+    @staticmethod
+    def _build_enhancement_prompt(
+        enhancer: TranscriptEnhancer,
+        prompt: Optional[str],
+        translate_to: Optional[str]
+    ) -> str:
+        """
+        Build the full Gemini prompt for one enhancement request.
+
+        The enhancer is a shared singleton, so translation is expressed in the
+        prompt per request instead of via its target_language attribute. This
+        also covers English, which older TranscriptEnhancer versions skipped
+        on the assumption that the ASR step had already translated (it never
+        does here: Qwen3-ASR doesn't translate and whisper-large-v3-turbo
+        ignores task="translate").
+        """
+        full_prompt = prompt.strip() if prompt and prompt.strip() else enhancer.get_default_prompt()
+        if translate_to:
+            language = TRANSLATION_LANGUAGE_NAMES.get(translate_to, translate_to)
+            full_prompt += (
+                f"\n\nAdditionally, translate the enhanced transcript into {language}. "
+                f"Output only the {language} version, keeping any timestamps and the Markdown structure."
+            )
+        return full_prompt
+
     async def enhance_transcript(
         self,
         transcript: str,
@@ -220,10 +269,9 @@ class WhisperService:
         """
         enhancer = self._get_enhancer()
 
-        # Call the correct API method
         result = enhancer.enhance_transcript(
             input_content=transcript,
-            custom_prompt=prompt
+            custom_prompt=self._build_enhancement_prompt(enhancer, prompt, translate_to)
         )
 
         # Check if enhancement was successful
@@ -458,10 +506,9 @@ class WhisperService:
         """
         enhancer = self._get_enhancer()
 
-        # Call the correct API method
         result = enhancer.enhance_transcript(
             input_content=transcript,
-            custom_prompt=prompt
+            custom_prompt=self._build_enhancement_prompt(enhancer, prompt, translate_to)
         )
 
         # Check if enhancement was successful

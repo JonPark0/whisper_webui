@@ -17,6 +17,12 @@ export const apiService = {
     return response.data;
   },
 
+  // STT engine / enhancer description (drives labels and available options)
+  async getInfo() {
+    const response = await api.get('/api/info');
+    return response.data;
+  },
+
   // Upload audio file
   async uploadAudio(file, onProgress) {
     const formData = new FormData();

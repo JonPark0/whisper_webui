@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     qwen3_transcribe_path: str = "/qwen3_transcribe"
     qwen_language: str = ""  # "" = auto-detect; canonical name (e.g. "Korean") to force
     qwen_context: str = ""   # Optional hotwords/domain vocabulary hint
+    # Long audio is split at the quietest point near every N seconds and the
+    # pieces decoded pipeline_batch_size at a time. Bounds VRAM per generate()
+    # call and keeps each piece's text within the token budget.
+    qwen_max_chunk_sec: float = 60.0
 
     # Server Configuration
     backend_port: int = 8000
@@ -32,7 +36,7 @@ class Settings(BaseSettings):
     # Processing Configuration
     default_timeout: int = 3600
     enable_flash_attention: bool = False
-    pipeline_batch_size: int = 4  # Chunks processed simultaneously; lower = less VRAM
+    pipeline_batch_size: int = 4  # Audio pieces decoded per generate() call; lower = less VRAM
 
     # Database Configuration
     db_path: Path = Path("/app/data/whisper.db")
