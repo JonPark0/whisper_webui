@@ -36,7 +36,9 @@ export const TranscribeOptions = ({ value, onChange, engineInfo }) => {
       <ToggleRow
         id={`${id}-ts`}
         label="Timestamps"
-        help="Click-to-seek transcript with [00:01:23] markers."
+        help={`Click-to-seek transcript with [00:01:23] markers.${
+          engineInfo?.engine === 'Qwen3-ASR' ? ' Loads a 0.6B aligner (about +1.2 GB VRAM).' : ''
+        }`}
         checked={value.enable_timestamp}
         onChange={(v) => set({ enable_timestamp: v })}
       />
