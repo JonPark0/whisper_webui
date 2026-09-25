@@ -1,90 +1,88 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiService } from '../services/api';
 
-export const useJobs = (filters = {}, autoRefresh = true, refreshInterval = 5000) => {
+// Poll while the tab is visible; refresh immediately when it becomes visible.
+const usePolling = (callback, interval) => {
+  const saved = useRef(callback);
+  useEffect(() => { saved.current = callback; }, [callback]);
+
+  useEffect(() => {
+    const tick = () => { if (!document.hidden) saved.current(); };
+    const id = setInterval(tick, interval);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [interval]);
+};
+
+/**
+ * Server-paginated job list.
+ * filters: { job_type, status, archived, q } · page is 1-based.
+ */
+export const useJobs = (filters = {}, { page = 1, pageSize = 20, interval = 3000 } = {}) => {
   const [jobs, setJobs] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Use ref to store filters to avoid infinite loops
-  const filtersRef = useRef(filters);
-
-  // Update ref when filters change
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [JSON.stringify(filters)]);
+  const requestId = useRef(0);
+  const key = JSON.stringify(filters);
 
   const fetchJobs = useCallback(async () => {
+    const id = ++requestId.current;
     try {
-      setLoading(true);
-      const data = await apiService.getJobs(filtersRef.current);
+      const data = await apiService.getJobs({ ...JSON.parse(key), limit: pageSize, offset: (page - 1) * pageSize });
+      if (id !== requestId.current) return; // a newer request (filter/page change) won
       setJobs(data.jobs);
       setTotal(data.total);
       setError(null);
     } catch (err) {
-      setError(err.message || 'Failed to fetch jobs');
+      if (id === requestId.current) setError(err.message || 'Failed to load jobs');
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
-  }, []);
+  }, [key, page, pageSize]);
 
   useEffect(() => {
+    setLoading(true);
     fetchJobs();
+  }, [fetchJobs]);
+  usePolling(fetchJobs, interval);
 
-    if (autoRefresh) {
-      const interval = setInterval(fetchJobs, refreshInterval);
-      return () => clearInterval(interval);
-    }
-  }, [fetchJobs, autoRefresh, refreshInterval]);
-
-  return { jobs, total, loading, error, refetch: fetchJobs };
+  return { jobs, total, pageCount: Math.max(1, Math.ceil(total / pageSize)), loading, error, refetch: fetchJobs };
 };
 
-export const useJob = (jobId, autoRefresh = true, refreshInterval = 5000) => {
-  const [job, setJob] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [shouldStopPolling, setShouldStopPolling] = useState(false);
-
-  const fetchJob = useCallback(async () => {
-    if (!jobId) return false;
-
+export const useStats = (interval = 5000) => {
+  const [stats, setStats] = useState(null);
+  const fetchStats = useCallback(async () => {
     try {
-      const data = await apiService.getJob(jobId);
-      setJob(data);
-      setError(null);
-
-      // Stop auto-refresh if job is completed or failed
-      if (data.status === 'completed' || data.status === 'failed') {
-        setShouldStopPolling(true);
-        return true;
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to fetch job');
-    } finally {
-      setLoading(false);
+      setStats(await apiService.getStats());
+    } catch {
+      // Stats are decorative; keep the last value on transient errors.
     }
+  }, []);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+  usePolling(fetchStats, interval);
+  return { stats, refetch: fetchStats };
+};
 
-    return false;
-  }, [jobId]);
-
+// Re-render periodically so relative times ("2 min ago") stay current.
+export const useNow = (interval = 30000) => {
+  const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    if (!jobId) return;
+    const id = setInterval(() => setNow(Date.now()), interval);
+    return () => clearInterval(id);
+  }, [interval]);
+  return now;
+};
 
-    setShouldStopPolling(false);
-    fetchJob();
-
-    if (autoRefresh && !shouldStopPolling) {
-      const interval = setInterval(() => {
-        if (!shouldStopPolling) {
-          fetchJob();
-        }
-      }, refreshInterval);
-
-      return () => clearInterval(interval);
-    }
-  }, [jobId, fetchJob, autoRefresh, refreshInterval, shouldStopPolling]);
-
-  return { job, loading, error, refetch: fetchJob };
+// Reset to page 1 when the search text changes, debounced.
+export const useDebounced = (value, delay = 300) => {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
 };

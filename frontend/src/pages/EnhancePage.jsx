@@ -1,143 +1,139 @@
-import { useState, useRef } from 'react';
-import { TranscriptSelector } from '../components/TranscriptSelector';
-import { EnhanceOptions } from '../components/EnhanceOptions';
-import { JobQueue } from '../components/JobQueue';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiService } from '../services/api';
+import { useEngineInfo } from '../hooks/useEngineInfo';
+import { useDebounced, useJobs, useNow } from '../hooks/useJobs';
+import { errorText, formatClock, jobTitle, relativeTime } from '../lib/format';
+import { PageSplit, Section } from '../components/layout/PageSplit';
+import { JobList } from '../components/JobList';
+import { TRANSLATION_OPTIONS } from '../components/TranscribeOptions';
+import { Alert } from '../components/ui/Alert';
+import { Button } from '../components/ui/Button';
+import { SearchField, SelectField, TextArea } from '../components/ui/Field';
+import { Pagination } from '../components/ui/Pagination';
 
+const PAGE_SIZE = 8;
+
+// Not in Figma v2: composed from the same primitives as the Transcribe screen.
 export const EnhancePage = () => {
-  const [selectedJobIds, setSelectedJobIds] = useState([]);
-  const [enhanceOptions, setEnhanceOptions] = useState({});
-  const [submittingJobs, setSubmittingJobs] = useState({});
-  const [error, setError] = useState(null);
-  const jobQueueRefetchRef = useRef(null);
+  const engineInfo = useEngineInfo();
+  const now = useNow();
+  const [selected, setSelected] = useState([]);
+  const [translateTo, setTranslateTo] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState([]);
+  const refetchQueue = useRef(null);
+  const onRefetchReady = useCallback((fn) => { refetchQueue.current = fn; }, []);
+  const q = useDebounced(search.trim());
+  useEffect(() => { setPage(1); }, [q]);
 
-  const handleSelect = (jobId) => {
-    setSelectedJobIds(prev => {
-      if (prev.includes(jobId)) {
-        return prev.filter(id => id !== jobId);
+  const { jobs, total, pageCount, loading } = useJobs(
+    { job_type: 'transcribe', status: 'completed', archived: 0, ...(q ? { q } : {}) },
+    { page, pageSize: PAGE_SIZE, interval: 10000 }
+  );
+  const enhancerUnavailable = engineInfo && engineInfo.enhancer_configured === false;
+
+  const toggle = (id) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const submit = async () => {
+    setSubmitting(true);
+    const failed = [];
+    for (const id of selected) {
+      try {
+        await apiService.createEnhanceJob(id, {
+          translate_to: translateTo || null,
+          enhancement_prompt: prompt.trim() || null,
+        });
+        setSelected((prev) => prev.filter((x) => x !== id));
+      } catch (err) {
+        failed.push(`#${id}: ${errorText(err, 'could not be queued')}`);
       }
-      return [...prev, jobId];
-    });
-  };
-
-  const handleSubmitSingle = async (jobId) => {
-    setSubmittingJobs(prev => ({ ...prev, [jobId]: true }));
-    setError(null);
-
-    try {
-      await apiService.createEnhanceJob(jobId, enhanceOptions);
-
-      // Remove from selection
-      setSelectedJobIds(prev => prev.filter(id => id !== jobId));
-
-      // Immediately refresh job queue to show the new job
-      if (jobQueueRefetchRef.current) {
-        jobQueueRefetchRef.current();
-      }
-
-    } catch (err) {
-      setError(`Job #${jobId}: ${err.response?.data?.detail || err.message || 'Failed to create enhancement job'}`);
-    } finally {
-      setSubmittingJobs(prev => {
-        const newState = { ...prev };
-        delete newState[jobId];
-        return newState;
-      });
     }
-  };
-
-  const handleSubmitAll = async () => {
-    if (selectedJobIds.length === 0) {
-      setError('Please select transcripts to enhance');
-      return;
-    }
-
-    // Submit all selected jobs sequentially
-    for (const jobId of selectedJobIds) {
-      await handleSubmitSingle(jobId);
-    }
+    setErrors(failed);
+    setSubmitting(false);
+    refetchQueue.current?.();
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Enhance Transcript</h1>
-        <p className="text-gray-600">
-          Improve transcript quality using Gemini AI
-        </p>
-      </div>
+    <PageSplit
+      title="Enhance"
+      description="Clean up finished transcripts with Gemini: punctuation, filler words, structure — and optionally translate them."
+      aside={<span>{total} transcript{total === 1 ? '' : 's'} available</span>}
+    >
+      {enhancerUnavailable && (
+        <Alert tone="warning" title="Gemini is not configured">
+          Set GEMINI_API_KEY on the server to enable clean-up and translation.
+        </Alert>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Left Column */}
-        <div className="space-y-6">
-          {/* Transcript Selection */}
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              1. Select Transcripts {selectedJobIds.length > 0 && `(${selectedJobIds.length} selected)`}
-            </h2>
-            <TranscriptSelector
-              onSelect={handleSelect}
-              selectedJobIds={selectedJobIds}
-              multiSelect={true}
-            />
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Enhancement Options */}
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              2. Configure Enhancement
-            </h2>
-            <EnhanceOptions onChange={setEnhanceOptions} />
-          </div>
-
-          {/* Submit Button */}
-          {selectedJobIds.length > 0 && (
-            <div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                3. Add to Queue
-              </h2>
-              <button
-                onClick={handleSubmitAll}
-                disabled={Object.keys(submittingJobs).length > 0}
-                className="w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {Object.keys(submittingJobs).length > 0 ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-5 h-5 animate-spin" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8Z" />
-                    </svg>
-                    Adding {Object.keys(submittingJobs).length} to Queue...
-                  </span>
-                ) : (
-                  selectedJobIds.length === 1
-                    ? 'Enhance Transcript'
-                    : `Enhance ${selectedJobIds.length} Transcripts`
-                )}
-              </button>
-
-              {error && (
-                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-            </div>
+      <Section
+        title="Choose transcripts"
+        actions={<SearchField value={search} onChange={setSearch} className="w-full max-w-[260px]" label="Search transcripts" />}
+      >
+        <fieldset aria-busy={loading || undefined}>
+          <legend className="sr-only">Transcripts to clean up</legend>
+          {jobs.map((job) => (
+            <label key={job.id} className="border-t border-line py-3 flex items-center gap-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.includes(job.id)}
+                onChange={() => toggle(job.id)}
+                className="h-4 w-4 accent-[var(--color-accent-default)]"
+              />
+              <span className="flex-1 min-w-0 truncate font-sans text-body text-ink">{jobTitle(job)}</span>
+              <span className="font-display text-caption font-light text-ink-3">
+                {[job.audio_duration ? formatClock(job.audio_duration) : null, job.enable_timestamp ? 'Timestamps' : null,
+                  job.auto_enhance ? 'already cleaned up' : null, `#${job.id}`, relativeTime(job.completed_at, now)]
+                  .filter(Boolean).join(' · ')}
+              </span>
+            </label>
+          ))}
+          {!loading && jobs.length === 0 && (
+            <p className="border-t border-line py-8 font-sans text-body text-ink-3">
+              {q ? `No transcripts match “${q}”.` : 'No finished transcripts yet.'}
+            </p>
           )}
-        </div>
-      </div>
+          <div className="border-t border-line" />
+        </fieldset>
+        <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+      </Section>
 
-      {/* Queue Section */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Enhancement Queue</h2>
-        <JobQueue
-          jobType="enhance"
-          onRefetchReady={(refetch) => {
-            jobQueueRefetchRef.current = refetch;
-          }}
+      <Section title="Options">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <SelectField
+            label="Translate to"
+            help="Gemini translates the cleaned-up transcript."
+            value={translateTo}
+            onChange={(e) => setTranslateTo(e.target.value)}
+            options={TRANSLATION_OPTIONS}
+          />
+        </div>
+        <TextArea
+          label="Extra instructions (optional)"
+          help="Added to the default clean-up instructions."
+          rows={3}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
         />
-      </div>
-    </div>
+        {errors.length > 0 && (
+          <Alert tone="danger" title="Some transcripts were not queued" onDismiss={() => setErrors([])}>
+            <ul>{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+          </Alert>
+        )}
+        <div className="flex flex-wrap items-center gap-4">
+          <p className="flex-1 font-display text-caption font-light text-ink-3">
+            {selected.length ? `${selected.length} selected` : 'Select transcripts above'}
+          </p>
+          <Button onClick={submit} disabled={!selected.length || enhancerUnavailable} loading={submitting}>
+            {selected.length > 1 ? `Clean up ${selected.length} transcripts` : 'Clean up transcript'}
+          </Button>
+        </div>
+      </Section>
+
+      <JobList title="Queue" jobType="enhance" emptyText="No clean-up jobs yet." onRefetchReady={onRefetchReady} />
+    </PageSplit>
   );
 };
