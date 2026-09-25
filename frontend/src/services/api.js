@@ -67,10 +67,17 @@ export const apiService = {
     if (filters.job_type) params.append('job_type', filters.job_type);
     if (filters.status) params.append('status', filters.status);
     if (filters.archived !== undefined) params.append('archived', filters.archived);
+    if (filters.q) params.append('q', filters.q);
     if (filters.limit) params.append('limit', filters.limit);
     if (filters.offset) params.append('offset', filters.offset);
 
     const response = await api.get(`/api/jobs?${params.toString()}`);
+    return response.data;
+  },
+
+  // Queue counts for the page header
+  async getStats() {
+    const response = await api.get('/api/stats');
     return response.data;
   },
 

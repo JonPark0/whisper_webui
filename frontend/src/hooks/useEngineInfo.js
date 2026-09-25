@@ -25,3 +25,10 @@ export const useEngineInfo = () => {
 
   return info;
 };
+
+// "faster-whisper · large-v3-turbo" — the repo id trimmed to the model name.
+export const engineLabel = (info) => {
+  if (!info?.engine) return '';
+  const model = info.model ? info.model.split('/').pop().replace(/^faster-whisper-|-ct2$/g, '') : '';
+  return model ? `${info.engine} · ${model}` : info.engine;
+};

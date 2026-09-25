@@ -1,218 +1,136 @@
-import { useState, useRef } from 'react';
-import { AudioUploader } from '../components/AudioUploader';
-import { TranscribeOptions } from '../components/TranscribeOptions';
-import { JobQueue } from '../components/JobQueue';
+import { useCallback, useRef, useState } from 'react';
 import { apiService } from '../services/api';
 import { useEngineInfo } from '../hooks/useEngineInfo';
+import { useStats } from '../hooks/useJobs';
+import { displayName, errorText, formatBytes, formatClock, formatSpan } from '../lib/format';
+import { PageSplit, Section } from '../components/layout/PageSplit';
+import { JobList } from '../components/JobList';
+import { TranscribeOptions, DEFAULT_TRANSCRIBE_OPTIONS } from '../components/TranscribeOptions';
+import { Alert } from '../components/ui/Alert';
+import { Button } from '../components/ui/Button';
+import { AUDIO_EXTENSIONS, Dropzone } from '../components/ui/Dropzone';
+
+export const StatsAside = ({ stats }) =>
+  stats ? (
+    <>
+      <span>{stats.running} running</span>
+      <span>{stats.queued} queued</span>
+      <span>
+        {stats.done_today} done today
+        {stats.audio_seconds_today > 0 && ` · ${formatSpan(stats.audio_seconds_today)} of audio`}
+      </span>
+    </>
+  ) : null;
 
 export const TranscribePage = () => {
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [transcribeOptions, setTranscribeOptions] = useState({});
-  const [submittingJobs, setSubmittingJobs] = useState({});
-  const [error, setError] = useState(null);
-  const jobQueueRefetchRef = useRef(null);
   const engineInfo = useEngineInfo();
+  const { stats, refetch: refetchStats } = useStats();
+  const [ready, setReady] = useState([]);
+  const [uploads, setUploads] = useState([]);
+  const [options, setOptions] = useState(DEFAULT_TRANSCRIBE_OPTIONS);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState([]);
+  const refetchQueue = useRef(null);
+  const onRefetchReady = useCallback((fn) => { refetchQueue.current = fn; }, []);
 
-  const handleUploadSuccess = (fileInfo) => {
-    // Add new file to the list
-    setUploadedFiles(prev => {
-      // Check if file already exists
-      const exists = prev.some(f => f.filename === fileInfo.filename);
-      if (exists) return prev;
-      return [...prev, fileInfo];
-    });
-    setError(null);
-  };
+  const handleFiles = async (files) => {
+    const valid = files.filter((f) => AUDIO_EXTENSIONS.includes(`.${f.name.split('.').pop().toLowerCase()}`));
+    const rejected = files.filter((f) => !valid.includes(f));
+    const newErrors = rejected.map((f) => `${f.name}: unsupported format`);
+    setUploads(valid.map((f) => ({ name: f.name, progress: 0 })));
 
-  const handleSubmitSingle = async (fileInfo) => {
-    setSubmittingJobs(prev => ({ ...prev, [fileInfo.filename]: true }));
-    setError(null);
-
-    try {
-      const requestData = {
-        ...transcribeOptions,
-        start_time: null,
-        end_time: null,
-      };
-
-      await apiService.createTranscribeJob(fileInfo.filename, requestData);
-
-      // Remove file from uploaded list
-      setUploadedFiles(prev => prev.filter(f => f.filename !== fileInfo.filename));
-
-      // Immediately refresh job queue to show the new job
-      if (jobQueueRefetchRef.current) {
-        jobQueueRefetchRef.current();
+    for (const file of valid) {
+      try {
+        const result = await apiService.uploadAudio(file, (progress) =>
+          setUploads((prev) => prev.map((u) => (u.name === file.name ? { ...u, progress } : u)))
+        );
+        setReady((prev) => (prev.some((r) => r.filename === result.filename) ? prev : [...prev, result]));
+      } catch (err) {
+        newErrors.push(`${file.name}: ${errorText(err, 'upload failed')}`);
+      } finally {
+        setUploads((prev) => prev.map((u) => (u.name === file.name ? { ...u, progress: 100 } : u)));
       }
-
-    } catch (err) {
-      setError(`${fileInfo.filename}: ${err.response?.data?.detail || err.message || 'Failed to create job'}`);
-    } finally {
-      setSubmittingJobs(prev => {
-        const newState = { ...prev };
-        delete newState[fileInfo.filename];
-        return newState;
-      });
     }
+    setUploads([]);
+    setErrors(newErrors);
   };
 
-  const handleSubmitAll = async () => {
-    if (uploadedFiles.length === 0) {
-      setError('Please upload audio files first');
-      return;
+  const submitAll = async () => {
+    setSubmitting(true);
+    const failed = [];
+    for (const file of ready) {
+      try {
+        await apiService.createTranscribeJob(file.filename, {
+          ...options,
+          translate_to: options.translate_to || null,
+          enhancement_prompt: options.enhancement_prompt.trim() || null,
+          start_time: null,
+          end_time: null,
+        });
+        setReady((prev) => prev.filter((r) => r.filename !== file.filename));
+      } catch (err) {
+        failed.push(`${displayName(file.filename)}: ${errorText(err, 'could not be queued')}`);
+      }
     }
-
-    // Submit all files sequentially
-    for (const fileInfo of uploadedFiles) {
-      await handleSubmitSingle(fileInfo);
-    }
+    setErrors(failed);
+    setSubmitting(false);
+    refetchQueue.current?.();
+    refetchStats();
   };
+
+  const totalSeconds = ready.reduce((sum, r) => sum + (r.duration || 0), 0);
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Transcribe Audio</h1>
-        <p className="text-gray-600">
-          Upload audio files and convert them to text{engineInfo?.engine ? ` using ${engineInfo.engine}` : ''}
-        </p>
-      </div>
+    <PageSplit
+      title="Transcribe"
+      description="Drop recordings, set options once, and queue them. Jobs keep running if you close this tab."
+      aside={<StatsAside stats={stats} />}
+    >
+      <Section title="Add audio">
+        <Dropzone onFiles={handleFiles} uploads={uploads} />
+        {errors.length > 0 && (
+          <Alert tone="danger" title={errors.length === 1 ? 'One file was not added' : `${errors.length} files were not added`} onDismiss={() => setErrors([])}>
+            <ul>{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+          </Alert>
+        )}
+        {ready.length > 0 && (
+          <ul aria-label="Ready to queue" className="border-b border-line">
+            {ready.map((file) => (
+              <li key={file.filename} className="border-t border-line py-3 flex items-center gap-4">
+                <span className="flex-1 min-w-0 truncate font-sans text-body text-ink">{displayName(file.filename)}</span>
+                <span className="font-display text-caption font-light text-ink-3">
+                  {[file.duration != null ? formatClock(file.duration) : null, formatBytes(file.size)].filter(Boolean).join(' · ')}
+                </span>
+                <Button variant="link" onClick={() => setReady((prev) => prev.filter((r) => r.filename !== file.filename))}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Left Column */}
-        <div className="space-y-6">
-          {/* Upload Section */}
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">1. Upload Audio</h2>
-            <AudioUploader onUploadSuccess={handleUploadSuccess} />
-          </div>
-
-          {/* Uploaded Files Table */}
-          {uploadedFiles.length > 0 && (
-            <div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                2. Uploaded Files ({uploadedFiles.length})
-              </h2>
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <div className="max-h-96 overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          File Name
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Duration
-                        </th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {uploadedFiles.map((file) => (
-                        <tr key={file.filename} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            <div className="truncate max-w-xs" title={file.filename.split('/').pop()}>
-                              {file.filename.split('/').pop()}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {file.duration == null
-                              ? '—'
-                              : `${Math.floor(file.duration / 60)}:${String(Math.round(file.duration % 60)).padStart(2, '0')}`}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {submittingJobs[file.filename] ? (
-                                <span className="text-xs text-blue-600 flex items-center gap-1">
-                                  <svg className="w-4 h-4 animate-spin" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8Z" />
-                                  </svg>
-                                  Adding...
-                                </span>
-                              ) : (
-                                <button
-                                  onClick={() => handleSubmitSingle(file)}
-                                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                                >
-                                  Add to Queue
-                                </button>
-                              )}
-                              <button
-                                onClick={() => setUploadedFiles(prev => prev.filter(f => f.filename !== file.filename))}
-                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                disabled={submittingJobs[file.filename]}
-                                title="Remove"
-                              >
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
+      <Section title="Options">
+        <TranscribeOptions value={options} onChange={setOptions} engineInfo={engineInfo} />
+        <div className="flex flex-wrap items-center gap-4">
+          <p className="flex-1 font-display text-caption font-light text-ink-3">
+            {ready.length
+              ? `${ready.length} file${ready.length === 1 ? '' : 's'}${totalSeconds ? ` · ${formatSpan(totalSeconds)}` : ''} · options apply to all`
+              : 'Add audio files to queue them'}
+          </p>
+          <Button onClick={submitAll} disabled={!ready.length} loading={submitting}>
+            {ready.length > 1 ? `Add ${ready.length} files to queue` : 'Add to queue'}
+          </Button>
         </div>
+      </Section>
 
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Options Section */}
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              2. Configure Options
-            </h2>
-            <TranscribeOptions onChange={setTranscribeOptions} engineInfo={engineInfo} />
-          </div>
-
-          {/* Batch Submit Button */}
-          {uploadedFiles.length > 0 && (
-            <div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                3. Batch Actions
-              </h2>
-              <button
-                onClick={handleSubmitAll}
-                disabled={Object.keys(submittingJobs).length > 0}
-                className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {Object.keys(submittingJobs).length > 0 ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-5 h-5 animate-spin" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8Z" />
-                    </svg>
-                    Adding {Object.keys(submittingJobs).length} to Queue...
-                  </span>
-                ) : (
-                  `Add All ${uploadedFiles.length} Files to Queue`
-                )}
-              </button>
-
-              {error && (
-                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Queue Section */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Processing Queue</h2>
-        <JobQueue
-          jobType="transcribe"
-          onRefetchReady={(refetch) => {
-            jobQueueRefetchRef.current = refetch;
-          }}
-        />
-      </div>
-    </div>
+      <JobList
+        title="Queue"
+        jobType="transcribe"
+        emptyText="Nothing queued yet — added files show up here with live progress."
+        onRefetchReady={onRefetchReady}
+        runningCount={stats?.running ?? 0}
+      />
+    </PageSplit>
   );
 };
