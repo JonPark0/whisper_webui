@@ -100,6 +100,7 @@ ENABLE_FLASH_ATTENTION=true  # If GPU supports it
 BACKEND_PORT=8000
 BACKEND_HOST=0.0.0.0
 FRONTEND_PORT=5173
+FRONTEND_MODE=prod  # nginx + static build instead of the Vite dev server
 RELOAD_MODE=false  # Disable in production
 
 # CORS Configuration (IMPORTANT: Set to your domain)
@@ -261,7 +262,8 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.prod
+      dockerfile: Dockerfile
+      target: prod
       args:
         - VITE_API_URL=https://yourdomain.com
     container_name: whisper_frontend
