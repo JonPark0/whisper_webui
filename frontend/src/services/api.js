@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Empty = same origin: the browser calls /api/... on whatever host served the
+// page (localhost, a LAN IP, a hostname) and the Vite dev server proxies it to
+// the backend. Set VITE_API_URL only when the API lives on another origin.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

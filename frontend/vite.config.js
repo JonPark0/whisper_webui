@@ -12,11 +12,12 @@ export default defineConfig({
     watch: {
       usePolling: true
     },
+    // The UI calls the API on its own origin by default, so these routes are
+    // proxied to the backend (FastAPI's interactive docs included).
     proxy: {
-      '/api': {
-        target: API_TARGET,
-        changeOrigin: true,
-      }
+      '/api': { target: API_TARGET, changeOrigin: true },
+      '/docs': { target: API_TARGET, changeOrigin: true },
+      '/openapi.json': { target: API_TARGET, changeOrigin: true },
     }
   }
 })

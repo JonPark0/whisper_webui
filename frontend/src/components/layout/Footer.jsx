@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { engineLabel, useEngineInfo } from '../../hooks/useEngineInfo';
 import { readTheme, saveTheme } from '../../lib/theme';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''; // same origin, see services/api.js
 const THEMES = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
