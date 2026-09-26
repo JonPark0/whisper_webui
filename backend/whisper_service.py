@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+import importlib.util
 import logging
 import threading
 import gc
@@ -21,9 +22,36 @@ sys.path.insert(0, settings.whisper_transcribe_path)
 
 from core.transcriber import WhisperTranscriber
 from core.enhancer import TranscriptEnhancer
+
+try:
+    from core.faster_transcriber import FasterWhisperTranscriber
+    # core.faster_transcriber imports faster_whisper lazily (in load_model),
+    # so a successful import above doesn't prove the package is installed.
+    FASTER_WHISPER_AVAILABLE = importlib.util.find_spec("faster_whisper") is not None
+except ImportError:
+    FASTER_WHISPER_AVAILABLE = False
 from database import Job, JobStatus, get_db
 
 logger = logging.getLogger(__name__)
+
+# Language names for the enhancer's translation instruction. The UI sends
+# ISO 639-1 codes; Gemini follows a plain language name more reliably.
+TRANSLATION_LANGUAGE_NAMES = {
+    "en": "English",
+    "ko": "Korean",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "ja": "Japanese",
+    "zh": "Chinese",
+}
+
+
+def active_engine() -> str:
+    """The engine _get_transcriber() will load: 'faster' or 'transformers'."""
+    if settings.stt_engine == "faster" and FASTER_WHISPER_AVAILABLE:
+        return "faster"
+    return "transformers"
 
 
 class WhisperService:
@@ -44,20 +72,34 @@ class WhisperService:
             torch.cuda.empty_cache()
             logger.info("GPU cache cleared")
 
-    def _get_transcriber(self) -> WhisperTranscriber:
+    def _get_transcriber(self):
         """Lazy load transcriber (thread-safe)"""
         if self.transcriber is None:
             with self._transcriber_lock:
                 # Double-check locking pattern
                 if self.transcriber is None:
-                    logger.info("Initializing Whisper transcriber")
-                    # WhisperTranscriber uses hardcoded openai/whisper-large-v3-turbo model
-                    # Note: settings.whisper_model is ignored as the model is fixed in the transcriber
-                    self.transcriber = WhisperTranscriber(
-                        verbose=True,
-                        batch_size=settings.pipeline_batch_size,
-                        use_flash_attn=settings.enable_flash_attention
-                    )
+                    engine = active_engine()
+                    if settings.stt_engine == "faster" and engine != "faster":
+                        logger.warning(
+                            "STT_ENGINE=faster but faster-whisper is not installed; "
+                            "falling back to the transformers pipeline"
+                        )
+                    logger.info(f"Initializing Whisper transcriber (engine={engine})")
+                    if engine == "faster":
+                        self.transcriber = FasterWhisperTranscriber(
+                            verbose=True,
+                            batch_size=settings.faster_batch_size,
+                            model_id=settings.faster_whisper_model,
+                            language=settings.whisper_language or None,
+                        )
+                    else:
+                        self.transcriber = WhisperTranscriber(
+                            verbose=True,
+                            batch_size=settings.pipeline_batch_size,
+                            use_flash_attn=settings.enable_flash_attention,
+                            model_id=settings.whisper_model,
+                            language=settings.whisper_language or None,
+                        )
                     # Load model on initialization
                     self.transcriber.load_model()
                     logger.info("Whisper transcriber loaded successfully")
@@ -72,7 +114,7 @@ class WhisperService:
                     logger.info("Initializing transcript enhancer")
                     self.enhancer = TranscriptEnhancer(verbose=True, model_name=settings.gemini_model)
                     # Setup Gemini API with the API key
-                    if settings.gemini_api_key:
+                    if settings.gemini_configured:
                         self.enhancer.setup_gemini(settings.gemini_api_key)
                         logger.info("Gemini API configured successfully")
                     else:
@@ -97,6 +139,7 @@ class WhisperService:
             job.status = JobStatus.PROCESSING
             job.started_at = datetime.utcnow()
             job.progress = 0.0
+            job.stage_message = "Loading the speech model"
             db_session.commit()
 
             transcriber = self._get_transcriber()
@@ -119,6 +162,8 @@ class WhisperService:
                 # Map transcription progress (0.1-1.0) to job progress (10%-80%)
                 job_progress = 10.0 + (progress * 70.0)
                 job.progress = job_progress
+                if update_data.get('message'):
+                    job.stage_message = update_data['message']
                 db_session.commit()
 
             # Transcribe using the correct API
@@ -137,11 +182,13 @@ class WhisperService:
 
             # Extract the text result
             result = transcribe_result['text']
+            job.audio_duration = transcribe_result.get('duration')
 
             # Clear GPU cache after transcription to free memory
             self._clear_gpu_cache()
 
             job.progress = 80.0
+            job.stage_message = "Saving the transcript"
             db_session.commit()
 
             # Save to markdown file
@@ -157,6 +204,7 @@ class WhisperService:
 
             job.output_file = str(output_path)
             job.progress = 90.0
+            job.stage_message = "Cleaning up with Gemini" if job.auto_enhance else "Finishing"
             db_session.commit()
 
             # Auto-enhance if requested
@@ -182,6 +230,7 @@ class WhisperService:
                 job.output_file = str(enhanced_path)
 
             job.progress = 100.0
+            job.stage_message = "Done"
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
             db_session.commit()
@@ -194,6 +243,38 @@ class WhisperService:
             job.completed_at = datetime.utcnow()
             db_session.commit()
             raise
+
+    @staticmethod
+    def _build_enhancement_prompt(
+        enhancer: TranscriptEnhancer,
+        prompt: Optional[str],
+        translate_to: Optional[str]
+    ) -> str:
+        """
+        Build the full Gemini prompt for one enhancement request.
+
+        The custom prompt is appended to the default instructions.
+
+        The enhancer is a shared singleton, so translation is expressed in the
+        prompt per request instead of via its target_language attribute. This
+        also covers English, which older TranscriptEnhancer versions skipped
+        on the assumption that the ASR step had already translated (it never
+        does here: Qwen3-ASR doesn't translate and whisper-large-v3-turbo
+        ignores task="translate").
+        """
+        # A custom prompt adds to the default clean-up instructions rather
+        # than replacing them: users type things like "focus on technical
+        # terms" and still expect grammar/punctuation fixes.
+        full_prompt = enhancer.get_default_prompt()
+        if prompt and prompt.strip():
+            full_prompt += f"\n\nAdditional instructions from the user:\n{prompt.strip()}"
+        if translate_to:
+            language = TRANSLATION_LANGUAGE_NAMES.get(translate_to, translate_to)
+            full_prompt += (
+                f"\n\nAdditionally, translate the enhanced transcript into {language}. "
+                f"Output only the {language} version, keeping any timestamps and the Markdown structure."
+            )
+        return full_prompt
 
     async def enhance_transcript(
         self,
@@ -214,10 +295,9 @@ class WhisperService:
         """
         enhancer = self._get_enhancer()
 
-        # Call the correct API method
         result = enhancer.enhance_transcript(
             input_content=transcript,
-            custom_prompt=prompt
+            custom_prompt=self._build_enhancement_prompt(enhancer, prompt, translate_to)
         )
 
         # Check if enhancement was successful
@@ -243,6 +323,7 @@ class WhisperService:
             job.status = JobStatus.PROCESSING
             job.started_at = datetime.utcnow()
             job.progress = 0.0
+            job.stage_message = "Starting"
             db_session.commit()
 
             # Read original transcript
@@ -250,6 +331,7 @@ class WhisperService:
                 original_content = f.read()
 
             job.progress = 20.0
+            job.stage_message = "Reading the transcript"
             db_session.commit()
 
             # Extract transcript content (skip markdown header)
@@ -263,6 +345,7 @@ class WhisperService:
             transcript_text = '\n'.join(lines[content_start:]).strip()
 
             job.progress = 30.0
+            job.stage_message = "Waiting for Gemini"
             db_session.commit()
 
             # Enhance
@@ -273,6 +356,7 @@ class WhisperService:
             )
 
             job.progress = 80.0
+            job.stage_message = "Saving the cleaned-up transcript"
             db_session.commit()
 
             # Save enhanced version
@@ -290,6 +374,7 @@ class WhisperService:
 
             job.output_file = str(enhanced_path)
             job.progress = 100.0
+            job.stage_message = "Done"
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
             db_session.commit()
@@ -343,6 +428,7 @@ class WhisperService:
             job.status = JobStatus.PROCESSING
             job.started_at = datetime.utcnow()
             job.progress = 0.0
+            job.stage_message = "Loading the speech model"
             db_session.commit()
 
             transcriber = self._get_transcriber()
@@ -365,6 +451,8 @@ class WhisperService:
                 # Map transcription progress (0.1-1.0) to job progress (10%-80%)
                 job_progress = 10.0 + (progress * 70.0)
                 job.progress = job_progress
+                if update_data.get('message'):
+                    job.stage_message = update_data['message']
                 db_session.commit()
 
             # Transcribe using the correct API
@@ -383,11 +471,13 @@ class WhisperService:
 
             # Extract the text result
             result = transcribe_result['text']
+            job.audio_duration = transcribe_result.get('duration')
 
             # Clear GPU cache after transcription to free memory
             self._clear_gpu_cache()
 
             job.progress = 80.0
+            job.stage_message = "Saving the transcript"
             db_session.commit()
 
             # Save to markdown file
@@ -403,6 +493,7 @@ class WhisperService:
 
             job.output_file = str(output_path)
             job.progress = 90.0
+            job.stage_message = "Cleaning up with Gemini" if job.auto_enhance else "Finishing"
             db_session.commit()
 
             # Auto-enhance if requested
@@ -428,6 +519,7 @@ class WhisperService:
                 job.output_file = str(enhanced_path)
 
             job.progress = 100.0
+            job.stage_message = "Done"
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
             db_session.commit()
@@ -452,10 +544,9 @@ class WhisperService:
         """
         enhancer = self._get_enhancer()
 
-        # Call the correct API method
         result = enhancer.enhance_transcript(
             input_content=transcript,
-            custom_prompt=prompt
+            custom_prompt=self._build_enhancement_prompt(enhancer, prompt, translate_to)
         )
 
         # Check if enhancement was successful
@@ -473,6 +564,7 @@ class WhisperService:
             job.status = JobStatus.PROCESSING
             job.started_at = datetime.utcnow()
             job.progress = 0.0
+            job.stage_message = "Starting"
             db_session.commit()
 
             # Read original transcript
@@ -480,6 +572,7 @@ class WhisperService:
                 original_content = f.read()
 
             job.progress = 20.0
+            job.stage_message = "Reading the transcript"
             db_session.commit()
 
             # Extract transcript content (skip markdown header)
@@ -493,6 +586,7 @@ class WhisperService:
             transcript_text = '\n'.join(lines[content_start:]).strip()
 
             job.progress = 30.0
+            job.stage_message = "Waiting for Gemini"
             db_session.commit()
 
             # Enhance
@@ -503,6 +597,7 @@ class WhisperService:
             )
 
             job.progress = 80.0
+            job.stage_message = "Saving the cleaned-up transcript"
             db_session.commit()
 
             # Save enhanced version
@@ -520,6 +615,7 @@ class WhisperService:
 
             job.output_file = str(enhanced_path)
             job.progress = 100.0
+            job.stage_message = "Done"
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
             db_session.commit()

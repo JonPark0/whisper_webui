@@ -11,7 +11,14 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-flash-latest"
 
     # Whisper Configuration
-    whisper_model: str = "openai/whisper-large-v3-turbo"
+    # "faster" = faster-whisper (CTranslate2): same large-v3-turbo weights,
+    #            built-in VAD, ~12x the transformers pipeline's throughput.
+    # "transformers" = the original Hugging Face pipeline.
+    stt_engine: str = "faster"
+    whisper_model: str = "openai/whisper-large-v3-turbo"            # transformers engine
+    faster_whisper_model: str = "deepdml/faster-whisper-large-v3-turbo-ct2"  # faster engine
+    # Recognition language (ISO 639-1, e.g. "ko"). "" = auto-detect per file.
+    whisper_language: str = ""
     whisper_transcribe_path: str = "/whisper_transcribe"
 
     # Server Configuration
@@ -29,7 +36,13 @@ class Settings(BaseSettings):
     # Processing Configuration
     default_timeout: int = 3600
     enable_flash_attention: bool = False
-    pipeline_batch_size: int = 4  # Chunks processed simultaneously; lower = less VRAM
+    # transformers engine only, and only matters in chunked mode (the
+    # library default is now sequential long-form decoding, which does not
+    # batch windows). The faster engine uses faster_batch_size.
+    pipeline_batch_size: int = 4
+    # faster-whisper's batched pipeline holds far less per-chunk state than the
+    # transformers pipeline, so it can batch more segments in the same VRAM.
+    faster_batch_size: int = 8
 
     # Database Configuration
     db_path: Path = Path("/app/data/whisper.db")
@@ -44,6 +57,16 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+
+    @property
+    def gemini_configured(self) -> bool:
+        """
+        True only for a real key. The placeholder from .env.example counts as
+        unset, so a copied-but-unedited .env doesn't advertise clean-up that
+        would fail in the worker.
+        """
+        key = self.gemini_api_key.strip()
+        return bool(key) and key != "your-gemini-api-key-here"
 
     @property
     def max_file_size_bytes(self) -> int:

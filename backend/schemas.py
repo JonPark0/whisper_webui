@@ -31,6 +31,8 @@ class JobResponse(BaseModel):
     input_file: str
     output_file: Optional[str]
     progress: float
+    stage_message: Optional[str] = None
+    audio_duration: Optional[float] = None
     error_message: Optional[str]
     archived: int
     created_at: datetime
@@ -44,6 +46,7 @@ class JobResponse(BaseModel):
     enable_chunked: bool
     chunk_length: int
     translate_to: Optional[str]
+    auto_enhance: bool = False
     enhancement_prompt: Optional[str]
 
     class Config:
@@ -54,6 +57,14 @@ class JobListResponse(BaseModel):
     """Response model for list of jobs"""
     jobs: list[JobResponse]
     total: int
+
+
+class StatsResponse(BaseModel):
+    """Counts for the dashboard summary"""
+    running: int
+    queued: int
+    done_today: int
+    audio_seconds_today: float
 
 
 class UploadResponse(BaseModel):
