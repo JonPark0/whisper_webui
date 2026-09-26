@@ -26,6 +26,9 @@ All notable changes to this project will be documented in this file.
 - `GET /api/stats`, `GET /api/jobs?q=` (file-name search), server-side pagination in the UI.
 - Confirm dialog (native `<dialog>`) for destructive actions; inline alerts instead of
   `alert()`.
+- `FRONTEND_MODE=dev|prod` switches the frontend between the Vite dev server and a static
+  build served by nginx (`frontend/nginx.conf`, same port, same `/api` proxy). The
+  frontend Dockerfile is multi-stage; building it without `--target` yields `prod`.
 
 ### Fixed
 - `translate_to` was ignored end to end; translation now happens in the Gemini step,

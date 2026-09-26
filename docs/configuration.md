@@ -192,6 +192,21 @@ RELOAD_MODE=true
 **Development:** `true` - Auto-reload on code changes
 **Production:** `false` - No auto-reload (better performance)
 
+### Frontend Mode
+
+```bash
+FRONTEND_MODE=dev
+```
+
+Selects the frontend image stage (`frontend/Dockerfile`). Apply a change with `docker compose up -d --build`.
+
+**Development:** `dev` - Vite dev server; edits under `frontend/` show up live
+**Production:** `prod` - static build served by nginx (`frontend/nginx.conf`); UI edits need a rebuild
+
+Both listen on `FRONTEND_PORT` and proxy `/api`, `/docs` and `/openapi.json` to the backend, so URLs
+and `VITE_API_URL` behave the same in either mode. nginx does not cap upload size; `MAX_FILE_SIZE`
+(enforced by the backend) is the only limit.
+
 ## Security Configuration
 
 ### CORS Origins
@@ -483,6 +498,7 @@ GEMINI_API_KEY=your-key
 QWEN_ASR_MODEL=Qwen/Qwen3-ASR-0.6B
 ENABLE_FLASH_ATTENTION=false
 PIPELINE_BATCH_SIZE=2
+FRONTEND_MODE=dev
 RELOAD_MODE=true
 LOG_LEVEL=DEBUG
 LOG_FORMAT=text
@@ -498,6 +514,7 @@ ENABLE_FLASH_ATTENTION=true
 PIPELINE_BATCH_SIZE=4
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
+FRONTEND_MODE=prod
 RELOAD_MODE=false
 ALLOWED_ORIGINS=https://yourdomain.com
 MAX_FILE_SIZE=1GB

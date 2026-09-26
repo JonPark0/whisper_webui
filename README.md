@@ -79,7 +79,8 @@ All configuration is done via the `.env` file. See [.env.example](.env.example) 
 **Server Settings:**
 - `BACKEND_PORT`: Backend server port (default: `8000`)
 - `FRONTEND_PORT`: Frontend server port (default: `5173`)
-- `RELOAD_MODE`: Enable auto-reload for development (default: `true`)
+- `FRONTEND_MODE`: `dev` = Vite dev server with live reload, `prod` = static build served by nginx (default: `dev`). Apply with `docker compose up -d --build`
+- `RELOAD_MODE`: Enable auto-reload for development (default: `true`; set `false` together with `FRONTEND_MODE=prod`)
 
 **Security:**
 - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (default: `http://localhost:5173`)

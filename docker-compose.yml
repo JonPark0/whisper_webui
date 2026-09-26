@@ -81,10 +81,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: ${FRONTEND_MODE:-dev}  # dev = Vite dev server, prod = nginx + static build
+      args:
+        - VITE_API_URL=${VITE_API_URL:-}  # used by the prod build only
     container_name: whisper_frontend
     ports:
       - "0.0.0.0:${FRONTEND_PORT:-5173}:5173"  # Listen on all interfaces
-    volumes:
+    volumes:  # used by the dev server only; the prod (nginx) image ignores /app
       - ./frontend:/app
       - /app/node_modules
     environment:
