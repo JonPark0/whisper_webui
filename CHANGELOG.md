@@ -2,7 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2025-12-02
+## [Unreleased] - 2026-09-25
+
+### Changed
+- **Qwen3-ASR long audio**: `QWEN_MAX_CHUNK_SEC` (default 60) makes qwen3_transcribe split
+  audio at silences and decode the pieces in batches. Measured on an RTX 3060 6 GB with a
+  12-minute file: previously CUDA OOM; now 14.5x realtime at 5.1 GB peak (batch 4, no
+  timestamps). Timestamped jobs at batch 4 still need ~6.8 GB — use `PIPELINE_BATCH_SIZE=2`
+  on 6 GB cards.
+- **UI redesign** after the PALNARIUM reference (Figma "Transcribe WebUI — Design System",
+  v2): Exo 2 / Anta / Pretendard (self-hosted, no CDN), monochrome ink accent with colour
+  reserved for status, text-link navigation and row actions, split page layout, Light/Dark
+  themes from one token set (CSS variables named after the Figma variables).
+- **Transcript viewer** is a page (`/jobs/:id`) instead of a modal: sticky player,
+  click-to-seek, follow-playback that pauses while you scroll, find-in-transcript,
+  .md/.srt/.txt downloads, and live status while the job is still running.
+- A custom Gemini prompt is appended to the default clean-up instructions instead of
+  replacing them.
+
+### Added
+- Live stage messages ("Transcribed 46% of audio") and audio duration per job; existing
+  SQLite databases get the new columns automatically at startup.
+- `GET /api/stats`, `GET /api/jobs?q=` (file-name search), server-side pagination in the UI.
+- Confirm dialog (native `<dialog>`) for destructive actions; inline alerts instead of
+  `alert()`.
+
+### Fixed
+- `translate_to` was ignored end to end; translation now happens in the Gemini step,
+  including English.
+- Jobs created before touching any option were submitted without the options the UI showed
+  (e.g. timestamps displayed ON but sent OFF).
+- The UI claimed "Powered by OpenAI Whisper" and offered chunk settings the engines ignore.
+
+## [2025-12-02]
 
 ### Added
 

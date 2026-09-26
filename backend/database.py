@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Enum, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -51,6 +51,8 @@ class Job(Base):
 
     # Progress tracking
     progress = Column(Float, default=0.0)
+    stage_message = Column(String, nullable=True)  # e.g. "Transcribed 46% of audio"
+    audio_duration = Column(Float, nullable=True)  # seconds actually transcribed
     error_message = Column(Text, nullable=True)
 
     # Archive status
@@ -64,6 +66,28 @@ class Job(Base):
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+
+def _add_missing_columns():
+    """
+    create_all() creates missing tables but never alters existing ones, so
+    columns added to Job after a database was first created are added here
+    (SQLite ADD COLUMN; all such columns are nullable or have a default).
+    Replaces one-off scripts like migrate_add_archived.py for new columns.
+    """
+    existing = {c["name"] for c in inspect(engine).get_columns(Job.__tablename__)}
+    added = {
+        "archived": "INTEGER DEFAULT 0",
+        "stage_message": "VARCHAR",
+        "audio_duration": "FLOAT",
+    }
+    with engine.begin() as conn:
+        for name, ddl in added.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE {Job.__tablename__} ADD COLUMN {name} {ddl}"))
+
+
+_add_missing_columns()
 
 
 def get_db():
