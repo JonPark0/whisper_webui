@@ -59,6 +59,16 @@ class Settings(BaseSettings):
         case_sensitive = False
 
     @property
+    def gemini_configured(self) -> bool:
+        """
+        True only for a real key. The placeholder from .env.example counts as
+        unset, so a copied-but-unedited .env doesn't advertise clean-up that
+        would fail in the worker.
+        """
+        key = self.gemini_api_key.strip()
+        return bool(key) and key != "your-gemini-api-key-here"
+
+    @property
     def max_file_size_bytes(self) -> int:
         """Convert max_file_size string to bytes"""
         size = self.max_file_size.upper()
