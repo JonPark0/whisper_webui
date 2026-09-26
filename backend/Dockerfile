@@ -34,9 +34,19 @@ RUN python -c "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 # faster-whisper/CTranslate2 needs CUDA 12 cuBLAS + cuDNN at runtime; expose
 # the pip-installed cu12 libs under a stable path (independent of the Python
 # version's site-packages layout) and put them on the loader path.
-RUN mkdir -p /opt/cuda12 && \
-    ln -s "$(python -c 'import nvidia.cublas.lib as m, os; print(os.path.dirname(m.__file__))')" /opt/cuda12/cublas && \
-    ln -s "$(python -c 'import nvidia.cudnn.lib as m, os; print(os.path.dirname(m.__file__))')" /opt/cuda12/cudnn
+# nvidia.cublas.lib / nvidia.cudnn.lib are namespace packages (no __file__),
+# so locate the shared objects themselves and fail loudly if they're missing.
+RUN set -e; \
+    find_lib() { python -c "import glob, os, site, sys; \
+d = sorted({os.path.dirname(f) for r in site.getsitepackages() for f in glob.glob(os.path.join(r, 'nvidia', '*', 'lib', sys.argv[1]))}); \
+print(d[0]) if d else sys.exit('not found: ' + sys.argv[1])" "$1"; }; \
+    CUBLAS_DIR="$(find_lib 'libcublas.so.12*')"; \
+    CUDNN_DIR="$(find_lib 'libcudnn.so.9*')"; \
+    echo "cuBLAS 12: $CUBLAS_DIR"; echo "cuDNN 9 (cu12): $CUDNN_DIR"; \
+    mkdir -p /opt/cuda12; \
+    ln -s "$CUBLAS_DIR" /opt/cuda12/cublas; \
+    ln -s "$CUDNN_DIR" /opt/cuda12/cudnn; \
+    ls /opt/cuda12/cublas/libcublas.so.12* /opt/cuda12/cudnn/libcudnn.so.9* >/dev/null
 ENV LD_LIBRARY_PATH=/opt/cuda12/cublas:/opt/cuda12/cudnn:${LD_LIBRARY_PATH}
 
 # Clone whisper_transcribe repository
