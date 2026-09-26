@@ -35,6 +35,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+GEMINI_NOT_CONFIGURED = "Gemini clean-up is not configured: set GEMINI_API_KEY in .env and restart."
+
 app = FastAPI(title="Whisper WebUI API", version="1.0.0")
 
 # CORS middleware - only allow specific origins
@@ -153,7 +155,7 @@ async def engine_info():
         "max_chunk_sec": settings.qwen_max_chunk_sec,
         "enhancer": "Google Gemini",
         "enhancer_model": settings.gemini_model,
-        "enhancer_configured": bool(settings.gemini_api_key),
+        "enhancer_configured": settings.gemini_configured,
     }
 
 
@@ -245,6 +247,9 @@ async def create_transcribe_job(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
+    if request.auto_enhance and not settings.gemini_configured:
+        raise HTTPException(status_code=400, detail=GEMINI_NOT_CONFIGURED)
+
     # Create job
     job = Job(
         job_type=JobType.TRANSCRIBE,
@@ -281,6 +286,9 @@ async def create_enhance_job(
 
     The job will be processed by Celery worker in parallel
     """
+    if not settings.gemini_configured:
+        raise HTTPException(status_code=400, detail=GEMINI_NOT_CONFIGURED)
+
     # Get source job
     source_job = db.query(Job).filter(Job.id == request.job_id).first()
 
