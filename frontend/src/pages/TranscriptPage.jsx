@@ -242,7 +242,7 @@ export const TranscriptPage = () => {
             />
             <span className="font-mono text-mono text-ink-3">{formatClock(duration)}</span>
             <button type="button" onClick={cycleSpeed} className="font-display text-label text-ink-2 hover:text-ink" aria-label="Playback speed">
-              {speed.toFixed(speed % 1 ? 2 : 1).replace(/0$/, '')}×
+              {Number.isInteger(speed) ? speed.toFixed(1) : speed}×
             </button>
             <form
               onSubmit={(e) => { e.preventDefault(); nextMatch(); }}
