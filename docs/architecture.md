@@ -288,6 +288,7 @@ See [Security Guide](security.md) for detailed information.
 ## Development vs. Production
 
 ### Development Mode
+- Images built from the checkout (`docker-compose.override.yml`, copied from `docker-compose.override.yml.example`)
 - Hot reload enabled (`RELOAD_MODE=true`, `FRONTEND_MODE=dev`)
 - Verbose logging (`LOG_LEVEL=DEBUG`)
 - Frontend proxy to backend
@@ -295,9 +296,9 @@ See [Security Guide](security.md) for detailed information.
 
 ### Production Mode
 - No auto-reload (`RELOAD_MODE=false`)
-- Frontend served as a static build by nginx (`FRONTEND_MODE=prod`)
+- Frontend served as a static build by nginx
 - INFO/WARNING logging
-- Pre-built Docker images
+- Pre-built Docker images from GHCR (`docker-compose.yml`, built by `.github/workflows/image.yml`)
 - Persistent volumes only
 - HTTPS termination (reverse proxy)
 

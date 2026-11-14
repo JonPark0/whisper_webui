@@ -68,9 +68,17 @@ Get your Gemini API key from [Google AI Studio](https://aistudio.google.com/).
 
 ### 3. Start with Docker Compose
 
+`docker-compose.yml` runs the published images from GHCR. For development,
+build from your checkout instead, with `backend/` mounted and auto-reload on
+and the Vite dev server for the frontend:
+
 ```bash
-# Start all services
-docker-compose up -d
+cp docker-compose.override.yml.example docker-compose.override.yml
+```
+
+```bash
+# Build and start all services
+docker-compose up -d --build
 
 # View logs
 docker-compose logs -f
@@ -83,7 +91,9 @@ Services will be available at:
 - Frontend: http://localhost:5173
 - Backend: http://localhost:8000
 - Backend Docs: http://localhost:8000/docs (Swagger UI)
-- Redis: localhost:6379
+- Redis: not published to the host; uncomment the `redis` ports in
+  `docker-compose.override.yml` to reach it at localhost:6379 (e.g. for the
+  local backend development below)
 
 ## Development Workflow
 

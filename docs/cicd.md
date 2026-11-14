@@ -21,7 +21,8 @@ Whisper WebUI uses GitHub Actions for automated testing, building, and deploymen
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | Push/PR | Run tests, lint, build |
-| `docker-publish.yml` | Release | Build and publish Docker images |
+| `image.yml` | Push to `main`, PR, manual | Build the Docker images; publish them to GHCR from `main` |
+| `ghcr-cleanup.yml` | Weekly, manual | Delete old image builds from GHCR |
 
 ## GitHub Actions Workflows
 
@@ -154,44 +155,45 @@ security-scan:
 - MEDIUM: Fix when possible
 - LOW: Optional improvements
 
-### Docker Publish Workflow
+### Image Workflow
 
-**File:** `.github/workflows/docker-publish.yml`
+**File:** `.github/workflows/image.yml`
 
 **Triggers:**
-- New release published
-- Manual workflow dispatch
+- Push to `main`: build and publish both images
+- Pull request: build only the images whose directory (`backend/`, `frontend/`) or
+  the workflow itself changed, without publishing
+- Manual workflow dispatch: build both (publishes when run on `main`)
 
-**Jobs:**
+**Images:**
+- `ghcr.io/jonpark0/whisper_webui-backend` (also run by `celery_worker`)
+- `ghcr.io/jonpark0/whisper_webui-frontend` (`prod` stage: nginx + static build)
 
-#### Build and Push Images
+**Image tags created (from `main`):**
+- `main` - newest build of `main`
+- `sha-<commit>` - the build of that commit (first 7 characters), for rollbacks
 
-```yaml
-build-and-push:
-  runs-on: ubuntu-latest
-  permissions:
-    contents: read
-    packages: write
+**Notes:**
+- A `main` build is never cancelled by a newer push, so every merged commit
+  keeps its `sha-` tag; a newer pull request push cancels the older PR build.
+- The backend (NVIDIA PyTorch base, ~20 GB) frees disk on the runner first and
+  keeps its layer cache in GHCR (`whisper_webui-backend:buildcache`), since it
+  outgrows the 10 GB Actions cache. The frontend uses the Actions cache.
+- `VITE_API_URL` is baked into the frontend at build time from the repository
+  variable of the same name (Settings → Secrets and variables → Actions →
+  Variables). Leave it unset: the UI then calls `/api` on its own origin.
+- Actions are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`)
+  raises the SHA and its version comment together.
 
-  strategy:
-    matrix:
-      service: [backend, frontend]
+### GHCR Cleanup Workflow
 
-  steps:
-    - Checkout code
-    - Set up Docker Buildx
-    - Log in to Container Registry (ghcr.io)
-    - Extract metadata (tags, labels)
-    - Build and push images
-```
+**File:** `.github/workflows/ghcr-cleanup.yml`
 
-**Image tags created:**
-- `latest` - Latest stable release
-- `v1.2.3` - Specific version
-- `1.2` - Major.minor version
-- `main` - Main branch builds
-
-**Registry:** GitHub Container Registry (`ghcr.io`)
+Runs weekly (Monday 04:23 Asia/Seoul) and on demand (`dry_run` defaults to
+true for manual runs). Keeps `main`, `buildcache` and the 5 newest other
+`sha-` builds; deletes older `sha-` builds and untagged leftovers. The
+repository needs the Admin role on each package (Package settings → Manage
+Actions access → whisper_webui → Role: Admin).
 
 ## CI Pipeline
 
@@ -336,80 +338,36 @@ npm update
 
 ## CD Pipeline
 
-### Release Process
+### Publishing
 
-#### 1. Create Release
+Merging into `main` is the release: `image.yml` builds both images and pushes
+them as `main` and `sha-<commit>`. There is no separate release step.
 
-```bash
-# Tag version
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
-```
+### Deploy
 
-#### 2. Publish Release
-
-On GitHub:
-1. Go to Releases
-2. Click "Draft a new release"
-3. Select tag: `v1.0.0`
-4. Fill in release notes
-5. Click "Publish release"
-
-#### 3. Automated Build
-
-GitHub Actions will automatically:
-1. Build Docker images
-2. Tag with version numbers
-3. Push to GitHub Container Registry
-
-#### 4. Deploy
+On the server, in the repository checkout (it provides `docker-compose.yml`
+and `.env`):
 
 ```bash
-# Pull latest images
-docker pull ghcr.io/yourusername/whisper_webui-backend:v1.0.0
-docker pull ghcr.io/yourusername/whisper_webui-frontend:v1.0.0
-
-# Update docker-compose.yml to use specific versions
-# Restart services
-docker-compose down
-docker-compose up -d
+docker compose pull
+docker compose up -d
 ```
 
-### Manual Deployment
+If the packages are private, log in once first with
+`docker login ghcr.io` (a personal access token with `read:packages`).
 
-**Deploy to specific version:**
+### Deploy a specific build / Rollback
 
 ```bash
-# Set version in .env
-echo "IMAGE_TAG=v1.0.0" >> .env
+# In .env: the commit to run (first 7 characters of its SHA)
+IMAGE_TAG=sha-1a2b3c4
 
-# Update docker-compose.yml
-services:
-  backend:
-    image: ghcr.io/yourusername/whisper_webui-backend:${IMAGE_TAG}
-
-  frontend:
-    image: ghcr.io/yourusername/whisper_webui-frontend:${IMAGE_TAG}
-
-# Deploy
-docker-compose pull
-docker-compose up -d
+docker compose pull
+docker compose up -d
 ```
 
-### Rollback
-
-```bash
-# Use previous version
-docker-compose down
-docker pull ghcr.io/yourusername/whisper_webui-backend:v0.9.0
-docker pull ghcr.io/yourusername/whisper_webui-frontend:v0.9.0
-
-# Update docker-compose.yml or .env
-IMAGE_TAG=v0.9.0
-
-# Restart
-docker-compose up -d
-```
+Set `IMAGE_TAG=main` again to return to the newest build. Only the 5 newest
+`sha-` builds are kept (see GHCR Cleanup Workflow).
 
 ## Secrets Management
 

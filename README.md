@@ -42,14 +42,42 @@ A web-based interface for [Whisper Transcribe](https://github.com/jonpark0/whisp
    GEMINI_API_KEY=your-actual-api-key
    ```
 
-3. Start the services:
+3. Pull the images and start the services:
    ```bash
-   docker-compose up -d
+   docker compose pull
+   docker compose up -d
    ```
+   The images are built by GitHub Actions and published to GHCR
+   (`ghcr.io/jonpark0/whisper_webui-backend`, `ghcr.io/jonpark0/whisper_webui-frontend`),
+   so nothing is built on the server. If the packages are private, log in once with
+   `docker login ghcr.io` (a personal access token with `read:packages`).
 
 4. Open your browser:
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:8000
+   - Frontend: http://localhost:5173, or http://<server-LAN-IP>:5173 from another device on the LAN
+   - Backend API: http://localhost:8000 (this machine only; the UI reaches it through the frontend's `/api` proxy)
+
+### Updating and rolling back
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+`IMAGE_TAG` in `.env` picks the build: `main` (default) is the newest build of
+`main`; `IMAGE_TAG=sha-<commit>` (first 7 characters of the commit) runs that
+commit's build, e.g. to roll back. The last 5 `sha-` builds are kept.
+
+### Building from source
+
+To develop, build the images from your checkout instead:
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up -d --build
+```
+
+The override mounts `backend/` into the containers with auto-reload and runs
+the Vite dev server (`FRONTEND_MODE=dev`). Delete `docker-compose.override.yml`
+to go back to the published images.
 
 ## Configuration
 
@@ -67,8 +95,11 @@ All configuration is done via the `.env` file. See [.env.example](.env.example) 
 **Server Settings:**
 - `BACKEND_PORT`: Backend server port (default: `8000`)
 - `FRONTEND_PORT`: Frontend server port (default: `5173`)
-- `FRONTEND_MODE`: `dev` = Vite dev server with live reload, `prod` = static build served by nginx (default: `dev`). Apply with `docker compose up -d --build`
-- `RELOAD_MODE`: Enable auto-reload for development (default: `true`; set `false` together with `FRONTEND_MODE=prod`)
+- `FRONTEND_BIND`: Address the frontend listens on (default: `0.0.0.0`, reachable from the LAN; `127.0.0.1` = this machine only)
+- `BACKEND_BIND`: Address the backend listens on (default: `127.0.0.1`; `0.0.0.0` opens the API to the LAN)
+- `IMAGE_TAG`: Image build to run (default: `main`; `sha-<commit>` for a specific commit)
+- `FRONTEND_MODE`: Development override only. `dev` = Vite dev server with live reload, `prod` = static build served by nginx (default: `dev`). Apply with `docker compose up -d --build`
+- `RELOAD_MODE`: Backend auto-reload (default: `false`; the development override turns it on)
 
 **Security:**
 - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (default: `http://localhost:5173`)

@@ -1,21 +1,55 @@
-# Local development override for mounting a sibling whisper_transcribe
-# checkout straight into the containers, so edits there take effect without
-# rebuilding the image (which otherwise only gets whisper_transcribe via the
-# `git clone` baked into backend/Dockerfile).
+# Development override: build the images from this checkout instead of
+# pulling them from GHCR, with live reload for the backend (RELOAD_MODE) and,
+# with FRONTEND_MODE=dev, the Vite dev server for the frontend.
 #
 # Usage:
 #   cp docker-compose.override.yml.example docker-compose.override.yml
-#   docker compose up -d
+#   docker compose up -d --build
 #
 # `docker compose` loads docker-compose.override.yml automatically when
-# present. Delete the file (or don't create it) to fall back to the image's
-# baked-in clone - this is why it's not committed as-is; a machine without a
-# sibling ../whisper_transcribe checkout would otherwise get an empty bind
-# mount that shadows the image contents and breaks the import.
+# present (it is gitignored). Delete it to go back to the published images
+# (`docker compose pull && docker compose up -d`).
 services:
   backend:
+    build:
+      context: ./backend
+    # Local tag, so a source build never takes the name of a pulled image
+    image: whisper_webui-backend:local
     volumes:
-      - ../whisper_transcribe:/whisper_transcribe:ro
+      - ./backend:/app
+      # Uncomment to use a sibling whisper_transcribe checkout instead of the
+      # copy baked into the image (edits there then apply without a rebuild).
+      # Without that checkout the empty bind mount would hide the image's
+      # copy and break the import, which is why it is commented out.
+      # - ../whisper_transcribe:/whisper_transcribe:ro
+    environment:
+      - RELOAD_MODE=${RELOAD_MODE:-true}
+
   celery_worker:
+    build:
+      context: ./backend  # same image as backend (the second build is all cache hits)
+    image: whisper_webui-backend:local
     volumes:
-      - ../whisper_transcribe:/whisper_transcribe:ro
+      - ./backend:/app
+      # - ../whisper_transcribe:/whisper_transcribe:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      target: ${FRONTEND_MODE:-dev}  # dev = Vite dev server, prod = nginx + static build
+      args:
+        - VITE_API_URL=${VITE_API_URL:-}  # used by the prod build only
+    image: whisper_webui-frontend:local
+    volumes:  # used by the dev server only; the prod (nginx) image ignores /app
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-}  # empty = same origin via the Vite proxy
+      - VITE_API_PROXY_TARGET=http://backend:8000
+
+  # Uncomment to reach Redis from this machine (e.g. a backend run outside
+  # Docker with REDIS_URL=redis://localhost:6379/0). Keep it on 127.0.0.1:
+  # Redis has no password.
+  # redis:
+  #   ports:
+  #     - "127.0.0.1:6379:6379"
