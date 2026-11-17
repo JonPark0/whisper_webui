@@ -138,6 +138,15 @@ LOG_FORMAT=json  # Structured logging
 
 ## Docker Deployment
 
+> **Prebuilt images (recommended):** `docker-compose.yml` already runs the
+> images that GitHub Actions publishes to GHCR (`ghcr.io/jonpark0/whisper_webui-backend`
+> and `-frontend`), with the frontend open to the LAN and the backend and Redis
+> kept local. After preparing the server (step 1) and `.env` (step 2), deploy
+> with `docker compose pull && docker compose up -d`, and pick a build with
+> `IMAGE_TAG` (see [CI/CD](cicd.md#cd-pipeline)). The custom
+> `docker-compose.prod.yml` below is only needed for the reverse proxy / TLS
+> setup it describes.
+
 ### 1. Prepare Server
 
 ```bash

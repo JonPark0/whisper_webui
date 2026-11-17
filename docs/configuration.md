@@ -131,13 +131,33 @@ FRONTEND_PORT=5174
 ### Host Binding
 
 ```bash
-BACKEND_HOST=0.0.0.0
+FRONTEND_BIND=0.0.0.0
+BACKEND_BIND=127.0.0.1
 ```
 
-**Options:**
-- `0.0.0.0` - Listen on all interfaces (default)
-- `127.0.0.1` - Localhost only (more secure)
-- Specific IP - Bind to particular interface
+The host addresses Docker publishes the ports on (`docker-compose.yml`).
+
+- `FRONTEND_BIND` (default `0.0.0.0`): the UI is reachable from the LAN at
+  `http://<server-LAN-IP>:FRONTEND_PORT`. `127.0.0.1` keeps it to this machine.
+- `BACKEND_BIND` (default `127.0.0.1`): the browser reaches the API through the
+  frontend's `/api` proxy, so the backend port only needs to be open locally.
+  `0.0.0.0` opens the API itself to the LAN.
+
+Redis has no published port: only the backend and the Celery worker use it,
+over the compose network.
+
+`BACKEND_HOST` is the address uvicorn binds *inside* the container; keep
+`0.0.0.0` there.
+
+### Image Tag
+
+```bash
+IMAGE_TAG=main
+```
+
+Which published build `docker compose pull` fetches for both images:
+`main` (default) is the newest build of `main`, `sha-<commit>` (first 7
+characters) a specific commit's build, e.g. to roll back.
 
 ### Reload Mode
 
@@ -145,8 +165,8 @@ BACKEND_HOST=0.0.0.0
 RELOAD_MODE=true
 ```
 
-**Development:** `true` - Auto-reload on code changes
-**Production:** `false` - No auto-reload (better performance)
+**Development:** `true` - Auto-reload on code changes (the default of `docker-compose.override.yml.example`, which mounts `backend/` into the container)
+**Production:** `false` - No auto-reload (the default with the published images)
 
 ### Frontend Mode
 
@@ -154,7 +174,9 @@ RELOAD_MODE=true
 FRONTEND_MODE=dev
 ```
 
-Selects the frontend image stage (`frontend/Dockerfile`). Apply a change with `docker compose up -d --build`.
+Development override only (`docker-compose.override.yml`, copied from `docker-compose.override.yml.example`):
+selects the frontend image stage (`frontend/Dockerfile`) when building from source. Apply a change with
+`docker compose up -d --build`. The published image is always `prod`.
 
 **Development:** `dev` - Vite dev server; edits under `frontend/` show up live
 **Production:** `prod` - static build served by nginx (`frontend/nginx.conf`); UI edits need a rebuild
@@ -453,6 +475,7 @@ keepalive_requests 100;
 GEMINI_API_KEY=your-key
 WHISPER_MODEL=openai/whisper-base
 ENABLE_FLASH_ATTENTION=false
+# with docker-compose.override.yml (build from source)
 FRONTEND_MODE=dev
 RELOAD_MODE=true
 LOG_LEVEL=DEBUG
@@ -467,7 +490,7 @@ WHISPER_MODEL=openai/whisper-large-v3-turbo
 ENABLE_FLASH_ATTENTION=true
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
-FRONTEND_MODE=prod
+IMAGE_TAG=main
 RELOAD_MODE=false
 ALLOWED_ORIGINS=https://yourdomain.com
 MAX_FILE_SIZE=1GB

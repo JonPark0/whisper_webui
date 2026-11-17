@@ -2,8 +2,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: whisper_redis
-    ports:
-      - "6379:6379"
+    # No published port: only backend and celery_worker use it, over
+    # whisper_network. It has no password, so publishing 6379 would open it to
+    # the whole LAN.
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -12,15 +13,17 @@ services:
     command: redis-server --appendonly yes
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    # Built and published by .github/workflows/image.yml; `docker compose pull`
+    # fetches it. IMAGE_TAG=sha-<commit> runs an earlier build. To build from
+    # this checkout instead (development), see docker-compose.override.yml.example.
+    image: ghcr.io/jonpark0/whisper_webui-backend:${IMAGE_TAG:-main}
     container_name: whisper_backend
     user: "1000:1000"  # Run as non-root user
     ports:
-      - "0.0.0.0:${BACKEND_PORT:-8000}:8000"  # Listen on all interfaces
+      # The UI reaches the API through the frontend's /api proxy, so the backend
+      # only listens on this machine. BACKEND_BIND=0.0.0.0 opens it to the LAN.
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./backend:/app
       - uploads:/app/uploads
       - outputs:/app/outputs
       - models:/app/models
@@ -29,7 +32,7 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - RELOAD_MODE=${RELOAD_MODE:-true}
+      - RELOAD_MODE=${RELOAD_MODE:-false}
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
@@ -38,9 +41,7 @@ services:
       - whisper_network
 
   celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/jonpark0/whisper_webui-backend:${IMAGE_TAG:-main}
     container_name: whisper_celery_worker
     user: "1000:1000"  # Run as non-root user
     ipc: host  # Use host IPC for shared memory (required for PyTorch)
@@ -49,7 +50,6 @@ services:
       stack: 67108864
     command: celery -A celery_app worker --loglevel=info --pool=solo --concurrency=1
     volumes:
-      - ./backend:/app
       - uploads:/app/uploads
       - outputs:/app/outputs
       - models:/app/models
@@ -78,21 +78,14 @@ services:
       - whisper_network
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      target: ${FRONTEND_MODE:-dev}  # dev = Vite dev server, prod = nginx + static build
-      args:
-        - VITE_API_URL=${VITE_API_URL:-}  # used by the prod build only
+    # Production build: static files served by nginx, which proxies /api to the
+    # backend. The Vite dev server is in docker-compose.override.yml.example.
+    image: ghcr.io/jonpark0/whisper_webui-frontend:${IMAGE_TAG:-main}
     container_name: whisper_frontend
     ports:
-      - "0.0.0.0:${FRONTEND_PORT:-5173}:5173"  # Listen on all interfaces
-    volumes:  # used by the dev server only; the prod (nginx) image ignores /app
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - VITE_API_URL=${VITE_API_URL:-}  # empty = same origin via the Vite proxy
-      - VITE_API_PROXY_TARGET=http://backend:8000
+      # Open to the LAN: http://<server-LAN-IP>:5173. FRONTEND_BIND=127.0.0.1
+      # keeps it to this machine.
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:5173"
     depends_on:
       - backend
     restart: unless-stopped

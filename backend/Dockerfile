@@ -49,8 +49,11 @@ print(d[0]) if d else sys.exit('not found: ' + sys.argv[1])" "$1"; }; \
     ls /opt/cuda12/cublas/libcublas.so.12* /opt/cuda12/cudnn/libcudnn.so.9* >/dev/null
 ENV LD_LIBRARY_PATH=/opt/cuda12/cublas:/opt/cuda12/cudnn:${LD_LIBRARY_PATH}
 
-# Clone whisper_transcribe repository
-RUN git clone https://github.com/jonpark0/whisper_transcribe.git /whisper_transcribe
+# whisper_transcribe at its current main. ADD re-checks a git URL on every
+# build, so a new whisper_transcribe commit rebuilds this layer; a
+# `RUN git clone` would stay cached for good under the image workflow's layer
+# cache. (.git is not kept; nothing reads it.)
+ADD https://github.com/jonpark0/whisper_transcribe.git#main /whisper_transcribe
 
 # Copy application code
 COPY . .
